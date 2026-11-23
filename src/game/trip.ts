@@ -174,15 +174,26 @@ export function dealNext(trip: Trip): Trip {
 
 /** Deals a scene hand in the brief phase. Leaves `round` null if the filters leave a suit empty. */
 export function dealScene(trip: Trip): Trip {
-  return deal(trip, false);
+  return deal(trip, false, 'staged');
+}
+
+/**
+ * Deals a stand-alone scene for quick play: no trip arc, so the How may be any card the filters allow from the
+ * first hand, and a twist comes with every hand whose How is easy.
+ */
+export function dealFreeScene(trip: Trip): Trip {
+  return deal(trip, false, 'free');
 }
 
 /** Deals the final scene, set at the trip's destination. */
 export function dealArrival(trip: Trip): Trip {
-  return deal(trip, true);
+  return deal(trip, true, 'staged');
 }
 
-function deal(trip: Trip, arrival: boolean): Trip {
+/** Staged hands build up over a trip; free hands stand alone. */
+type Staging = 'staged' | 'free';
+
+function deal(trip: Trip, arrival: boolean, staging: Staging): Trip {
   const sceneNumber = scenesBanked(trip) + 1;
   let next = trip;
 
@@ -198,7 +209,7 @@ function deal(trip: Trip, arrival: boolean): Trip {
   if (!who) return { ...trip, round: null };
   next = who.trip;
 
-  const howId = dealHow(next, sceneNumber);
+  const howId = staging === 'free' ? (next.settings.useHow ? draw(next, 'how') : null) : dealHow(next, sceneNumber);
   let howCard: Card | null = null;
   if (howId) {
     howCard = howId.card;
@@ -206,7 +217,8 @@ function deal(trip: Trip, arrival: boolean): Trip {
   }
 
   let twistId: string | null = null;
-  const twistDue = !arrival && sceneNumber >= 2 && sceneNumber % 2 === 0 && howCard?.level !== 'stretch';
+  const twistOnSchedule = staging === 'free' || (sceneNumber >= 2 && sceneNumber % 2 === 0);
+  const twistDue = !arrival && twistOnSchedule && howCard?.level !== 'stretch';
   if (next.settings.useTwists && twistDue) {
     const twist = draw(next, 'twist');
     if (twist) {
@@ -430,12 +442,19 @@ function entryFor(trip: Trip, round: Round, now: number, souvenir: Souvenir | nu
 export function bank(trip: Trip, now: number, souvenirText = ''): Trip {
   const round = trip.round;
   if (!round || !canBank(round)) return trip;
+  const banked = record(trip, now, souvenirText);
+  if (round.kind === 'scene' && round.arrival) return { ...banked, finishedAt: now };
+  return dealNext(banked);
+}
+
+/** Logs the finished round and adds its mile, leaving nothing dealt. */
+export function record(trip: Trip, now: number, souvenirText = ''): Trip {
+  const round = trip.round;
+  if (!round || !canBank(round)) return trip;
   const text = souvenirText.trim().slice(0, 60);
   const souvenir = round.kind === 'scene' && !round.arrival && text ? { text, from: cardById(round.whereId)?.title ?? '' } : null;
   const entry = entryFor(trip, round, now, souvenir);
-  const banked: Trip = { ...trip, miles: trip.miles + 1, log: [entry, ...trip.log] };
-  if (round.kind === 'scene' && round.arrival) return { ...banked, round: null, finishedAt: now };
-  return dealNext(banked);
+  return { ...trip, miles: trip.miles + 1, log: [entry, ...trip.log], round: null };
 }
 
 /** Open-road trips end when the family chooses: the next stop becomes the Arrival. */

@@ -10,11 +10,12 @@ interface SceneViewProps {
   readonly round: SceneRound;
   readonly now: number;
   readonly act: (step: (trip: Trip) => Trip) => void;
-  readonly souvenir: string;
-  readonly onSouvenir: (text: string) => void;
+  /** Souvenirs belong to trips; quick play leaves these out. */
+  readonly souvenir?: string;
+  readonly onSouvenir?: (text: string) => void;
 }
 
-export function SceneView({ trip, round, now, act, souvenir, onSouvenir }: SceneViewProps) {
+export function SceneView({ trip, round, now, act, souvenir = '', onSouvenir }: SceneViewProps) {
   const where = cardById(round.whereId);
   const who = cardById(round.whoId);
   const how = cardById(round.howId);
@@ -62,7 +63,7 @@ export function SceneView({ trip, round, now, act, souvenir, onSouvenir }: Scene
         <p className="landing">{opener}, last line.</p>
         <p className="landing-sub">Get the want or lose it, in one sentence. Then everyone: “Scene!”</p>
       </div>
-      {!round.arrival && (
+      {!round.arrival && onSouvenir && (
         <>
           <IonListHeader>
             <IonLabel>Keep a souvenir?</IonLabel>

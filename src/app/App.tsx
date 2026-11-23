@@ -1,9 +1,10 @@
 import { IonApp, IonIcon, IonLabel, IonRouterOutlet, IonTabBar, IonTabButton, IonTabs, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
-import { albums, book, car, map } from 'ionicons/icons';
+import { albums, book, car, flash, map } from 'ionicons/icons';
 import { Redirect, Route } from 'react-router-dom';
 import { CardsPage } from './pages/CardsPage';
 import { PlayPage } from './pages/PlayPage';
+import { QuickPage } from './pages/QuickPage';
 import { RulesPage } from './pages/RulesPage';
 import { TripsPage } from './pages/TripsPage';
 
@@ -19,6 +20,7 @@ export function App() {
         <IonTabs>
           <IonRouterOutlet>
             <Route exact path="/play" component={PlayPage} />
+            <Route exact path="/quick" component={QuickPage} />
             <Route exact path="/cards" component={CardsPage} />
             <Route exact path="/rules" component={RulesPage} />
             <Route exact path="/trips" component={TripsPage} />
@@ -30,6 +32,10 @@ export function App() {
             <IonTabButton tab="play" href="/play">
               <IonIcon icon={car} aria-hidden="true" />
               <IonLabel>Play</IonLabel>
+            </IonTabButton>
+            <IonTabButton tab="quick" href="/quick">
+              <IonIcon icon={flash} aria-hidden="true" />
+              <IonLabel>Quick</IonLabel>
             </IonTabButton>
             <IonTabButton tab="cards" href="/cards">
               <IonIcon icon={albums} aria-hidden="true" />

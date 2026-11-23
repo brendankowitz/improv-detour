@@ -65,6 +65,9 @@ export function RulesPage() {
             <Rule title="Arrive">
               The last stop is a scene at the destination, and the Opener has to bring a souvenir back into it.
             </Rule>
+            <Rule title="Or just play one">
+              Quick play skips the trip: deal one scene, one warm-up or a single card, then another.
+            </Rule>
           </IonList>
 
           <IonListHeader>

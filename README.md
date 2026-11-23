@@ -36,6 +36,10 @@ The colors come from road signs, which already tell you a sign's job before you 
 opens or lands a scene and can drop out by saying "driving". **Quiet** keeps it to a table voice. **Moving allowed**
 adds cards where someone stands up.
 
+**Quick play.** No time for a trip? The Quick tab deals one thing at a time: a full scene, a warm-up, or a single
+Character, Place, Rule or Twist to drop into whatever you're doing. Nothing is saved, and the cast still rotates
+from one scene to the next.
+
 **204 cards** across funny, sporty, nerdy, kid-life, beauty and style, classic and retro, and dad-joke themes, all
 written and cross-reviewed by Fable and Opus.
 
@@ -64,9 +68,9 @@ improv-detour/
 │   ├── game/          the rules: a pure, seeded engine (trips, casting, dealing, the clock)
 │   ├── content/       cards.json, the single source for the app and the printed deck
 │   ├── app/
-│   │   ├── pages/     Play, Cards, Rules, Trips
+│   │   ├── pages/     Play, Quick, Cards, Rules, Trips
 │   │   ├── play/      setup, the scene and warm-up views, the postcard, the read-aloud script
-│   │   ├── components/ sign cards, settings lists
+│   │   ├── components/ sign cards, player and settings lists
 │   │   ├── platform/  browser edges: speech, chimes, screen wake lock
 │   │   └── state/     the trip store, saved to this device only
 │   ├── theme/         design tokens and styles
