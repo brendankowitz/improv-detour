@@ -159,12 +159,12 @@ export function swapDestination(trip: Trip): Trip {
 
 // ---------------------------------------------------------------- dealing
 
-function castFor(trip: Trip): Cast | null {
+function castFor(trip: Trip, restDriver: boolean): Cast | null {
   const past = trip.log
     .filter((entry) => entry.castIds.length === 2)
     .map((entry) => [entry.castIds[0] ?? '', entry.castIds[1] ?? ''] as const)
     .reverse();
-  return pickCast(trip.players, trip.driverId, past, trip.settings.director);
+  return pickCast(trip.players, trip.driverId, past, trip.settings.director, restDriver);
 }
 
 /** Deals the next stop: the Arrival on the last stop, otherwise an ordinary scene. */
@@ -183,8 +183,6 @@ export function dealArrival(trip: Trip): Trip {
 }
 
 function deal(trip: Trip, arrival: boolean): Trip {
-  const cast = castFor(trip);
-  if (!cast) return { ...trip, round: null };
   const sceneNumber = scenesBanked(trip) + 1;
   let next = trip;
 
@@ -216,6 +214,10 @@ function deal(trip: Trip, arrival: boolean): Trip {
       next = twist.trip;
     }
   }
+
+  // Cast after the How is known: a stretch rule is too much for someone who is driving.
+  const cast = castFor(next, howCard?.level === 'stretch');
+  if (!cast) return { ...trip, round: null };
 
   const round: SceneRound = {
     kind: 'scene',

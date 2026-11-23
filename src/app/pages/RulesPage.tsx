@@ -87,6 +87,10 @@ export function RulesPage() {
               and can say “driving” to drop out at any moment.
             </Rule>
           </IonList>
+          <p className="section-note" style={{ paddingTop: 8 }}>
+            Built on classic improv games. The Story Spine is Kenn Adams’s; status play comes from Keith Johnstone’s
+            Impro.
+          </p>
           <div style={{ height: 24 }} />
         </div>
       </IonContent>

@@ -230,7 +230,10 @@ export function Road({ trip }: { readonly trip: Trip }) {
                       expand="block"
                       className="big"
                       onClick={() => {
+                        const cues = cardById(round.cardId)?.warmup?.turnCues ?? [];
+                        const next = round.turn + 1;
                         act(nextTurn);
+                        say(`${trip.players[next % trip.players.length]?.name ?? ''}: ${cues[next % cues.length] ?? ''}`);
                       }}
                     >
                       Next turn
