@@ -31,7 +31,7 @@ interface SignCardProps {
   readonly className?: string;
 }
 
-/** A card drawn as a road sign: suit colour, inset border stripe, highway lettering. */
+/** A card drawn as a road sign: suit color, inset border stripe, highway lettering. */
 export function SignCard({ card, compact = false, showTip = true, showMarks = false, label, onSwap, className }: SignCardProps) {
   const traits = showMarks ? marks(card) : [];
   return (

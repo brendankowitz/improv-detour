@@ -21,7 +21,7 @@ says who they are to them. Everyone else is on deck and can walk on or tag in. N
 want until the last line, and then everyone says "Scene!" After each scene you can keep a souvenir, and the final
 stop is a scene at the destination where the Opener has to bring a souvenir back. It ends on a postcard.
 
-| Card | Colour | Job |
+| Card | Color | Job |
 |---|---|---|
 | **Where** | Guide green | A place you can stand in, with one sound, smell or texture. |
 | **Who** | Recreation brown | The Opener's character, and a want aimed at the Partner. |
@@ -30,7 +30,7 @@ stop is a scene at the destination where the Opener has to bring a souvenir back
 | **Warm-up** | Warning yellow | A quick stand-alone game, two minutes at most. |
 | **Destination** | Interstate blue | Where the trip is going, and where it ends. |
 
-The colours come from road signs, which already tell you a sign's job before you read it.
+The colors come from road signs, which already tell you a sign's job before you read it.
 
 **Fit the space.** **Voice only** keeps every card playable by ear, and you can mark who's driving: the driver never
 opens or lands a scene and can drop out by saying "driving". **Quiet** keeps it to a table voice. **Moving allowed**

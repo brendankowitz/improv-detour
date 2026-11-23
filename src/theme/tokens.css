@@ -1,6 +1,6 @@
 /*
- * The chrome is plain iOS: system font, grouped backgrounds, one tint. The tint is systemOrange, the colour of a
- * detour sign. The only loud thing is the cards, which borrow the road-sign system: colour says what a card is for.
+ * The chrome is plain iOS: system font, grouped backgrounds, one tint. The tint is systemOrange, the color of a
+ * detour sign. The only loud thing is the cards, which borrow the road-sign system: color says what a card is for.
  */
 :root {
   --ion-font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, system-ui, sans-serif;
@@ -12,7 +12,7 @@
   --ion-color-primary-shade: #e08300;
   --ion-color-primary-tint: #ffa01a;
 
-  /* Road-sign suit colours */
+  /* Road-sign suit colors */
   --sign-where: #0b6e4f;
   --sign-who: #7a4a2a;
   --sign-how: #1e5aa8;
