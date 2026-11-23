@@ -19,7 +19,7 @@ function passes(card: (typeof CARDS)[number], filters: Filters): boolean {
 describe('the deck', () => {
   it('has the agreed mix', () => {
     expect(Object.fromEntries(SUITS.map((suit) => [suit, count(suit)]))).toEqual({
-      where: 26, who: 30, how: 16, twist: 12, warmup: 12, destination: 6,
+      where: 52, who: 60, how: 32, twist: 24, warmup: 24, destination: 12,
     });
   });
 
@@ -46,7 +46,7 @@ describe('the deck', () => {
   it('gives every How a standing cue and splits them into an easy and a stretch ladder', () => {
     const hows = CARDS.filter((card) => card.suit === 'how');
     expect(hows.every((card) => card.cue)).toBe(true);
-    expect(hows.filter((card) => card.level === 'easy')).toHaveLength(8);
+    expect(hows.filter((card) => card.level === 'easy')).toHaveLength(16);
   });
 
   it('writes Who cards as noun phrases the app can read as "you’re …"', () => {
