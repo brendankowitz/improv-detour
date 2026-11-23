@@ -1,9 +1,9 @@
 import { useCallback, useEffect } from 'react';
-import { cardById } from '@game/cards';
 import { playerName, type TripEvent } from '@game/trip';
 import type { Trip } from '@game/types';
 import { chime, isAudioUnlocked } from '@app/platform/chime';
 import { createBrowserVoice } from '@app/platform/speech';
+import { twistScript } from './script';
 
 const voice = createBrowserVoice();
 /** The voice waits this long after a chime so it never talks over the player mid-line. */
@@ -32,8 +32,7 @@ export function useAnnouncer(trip: Trip) {
       for (const event of events) {
         if (event === 'twist' && round?.kind === 'scene') {
           chime('twist');
-          const twist = cardById(round.twistId);
-          if (twist) say(`Twist. ${twist.prompt}`, AFTER_CHIME_MS);
+          say(`Twist. ${twistScript(next, round)}`, AFTER_CHIME_MS);
         }
         if (event === 'landing' && round?.kind === 'scene') {
           chime('start');

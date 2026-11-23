@@ -25,6 +25,8 @@ export function pickCast(
   driverId: string | null,
   past: readonly PastCast[],
   withDirector: boolean,
+  /** Keep the driver out of the scene, e.g. under a stretch How. Ignored if nobody else could partner. */
+  restDriver = false,
 ): Cast | null {
   if (players.length < 2) return null;
   const waited = (id: string) => {
@@ -48,8 +50,10 @@ export function pickCast(
   const openers = players.filter((player) => player.id !== driverId);
   const opener = best(openers, (p) => [due(p.id) ? 0 : 1, opened(p.id), -waited(p.id)]);
   if (!opener) return null;
+  const partners = players.filter((player) => player !== opener);
+  const rested = restDriver ? partners.filter((player) => player.id !== driverId) : partners;
   const partner = best(
-    players.filter((player) => player !== opener),
+    rested.length > 0 ? rested : partners,
     (p) => [due(p.id) ? 0 : 1, together(opener.id, p.id), -waited(p.id)],
   );
   if (!partner) return null;

@@ -55,6 +55,14 @@ describe('pickCast', () => {
     }
   });
 
+  it('can rest the driver from the Partner role, unless nobody else could partner', () => {
+    for (let i = 0; i < 8; i++) {
+      const cast = pickCast(players, 'p4', [], false, true);
+      expect(cast?.partnerId).not.toBe('p4');
+    }
+    expect(pickCast(players.slice(0, 2), 'p1', [], false, true)?.partnerId).toBe('p1');
+  });
+
   it('works for two players with one driving', () => {
     expect(run(3, 'p1', true, players.slice(0, 2))).toEqual(
       Array(3).fill({ openerId: 'p2', partnerId: 'p1', directorId: null }),

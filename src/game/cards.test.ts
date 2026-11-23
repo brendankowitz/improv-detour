@@ -54,6 +54,18 @@ describe('the deck', () => {
     expect(bad).toEqual([]);
   });
 
+  it('writes Who cards so the app can name the Partner: "you" only in "needs you to", no pronouns for the Opener', () => {
+    const whos = CARDS.filter((card) => card.suit === 'who');
+    const strayYou = whos.filter((card) => /\byou\b/i.test(card.prompt.replace(/\bneeds? you to\b/gi, ''))).map((c) => c.id);
+    const opener = whos.filter((card) => /\b(they|them|their|they’re|they’ve)\b/i.test(card.prompt)).map((c) => c.id);
+    expect({ strayYou, opener }).toEqual({ strayYou: [], opener: [] });
+  });
+
+  it('names a role, never "someone", when a Twist singles a player out', () => {
+    const vague = CARDS.filter((card) => card.suit === 'twist' && /\b(someone|somebody|one of you)\b/i.test(card.prompt));
+    expect(vague.map((c) => c.id)).toEqual([]);
+  });
+
   it('gives warm-ups enough seeds to replay', () => {
     const thin = CARDS.filter((card) => card.suit === 'warmup' && (card.warmup?.seeds?.length ?? 0) < 6).map((c) => c.id);
     expect(thin).toEqual([]);
