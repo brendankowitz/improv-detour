@@ -36,6 +36,9 @@ The colours come from road signs, which already tell you a sign's job before you
 opens or lands a scene and can drop out by saying "driving". **Quiet** keeps it to a table voice. **Moving allowed**
 adds cards where someone stands up.
 
+**204 cards** across funny, sporty, nerdy, kid-life, beauty and style, classic and retro, and dad-joke themes, all
+written and cross-reviewed by Fable and Opus.
+
 **Phone-down play.** The phone reads each hand aloud, keeps the screen awake, chimes ten seconds before the end and
 for twists, never talks over a player, and works offline once it has loaded.
 
