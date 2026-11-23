@@ -13,7 +13,10 @@ import '@theme/tokens.css';
 import '@theme/app.css';
 
 import { App } from '@app/App';
+import { registerUpdates } from '@app/platform/registerUpdates';
 import { TripProvider } from '@app/state/TripStore';
+
+registerUpdates();
 
 const host = document.getElementById('root');
 if (!host) throw new Error('Root element #root is missing from index.html.');
