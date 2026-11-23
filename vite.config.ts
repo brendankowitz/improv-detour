@@ -26,6 +26,8 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Registered from src/app/platform/registerUpdates.ts so the app can check for new versions on return.
+      injectRegister: false,
       includeAssets: ['favicon.svg'],
       manifest: {
         name: 'Detour',
