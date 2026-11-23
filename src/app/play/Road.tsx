@@ -1,39 +1,34 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { IonButton, IonButtons, IonContent, IonFooter, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar } from '@ionic/react';
+import { ellipsisHorizontalCircleOutline, pause as pauseIcon, play as playIcon, volumeHigh } from 'ionicons/icons';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { cardById } from '@game/cards';
-import { formatClock, isRunning, remaining } from '@game/clock';
+import { isRunning } from '@game/clock';
 import {
   bank,
   canBank,
+  canWarmUpInstead,
   isPaused,
   land,
-  lineCue,
   missingSuits,
-  nextLine,
+  nextTurn,
   pause,
-  renamePlayer,
-  ruleReminder,
   resume,
-  scrap,
-  speakerIndex,
   startRound,
   startWarmup,
-  swap,
+  stopNumber,
+  throwTwist,
   tick,
-  updateSettings,
-  type SwappableSuit,
-  type TripEvent,
+  totalStops,
 } from '@game/trip';
-import type { SceneRound, Trip, WarmupRound } from '@game/types';
-import { MilePost } from '@app/components/MilePost';
-import { SettingsFields } from '@app/components/SettingsFields';
-import { SignCard } from '@app/components/SignCard';
-import { chime, isAudioUnlocked, unlockAudio } from '@app/platform/chime';
-import { createBrowserVoice } from '@app/platform/speech';
+import type { Round, Trip } from '@game/types';
+import { chime, unlockAudio } from '@app/platform/chime';
 import { useWakeLock } from '@app/platform/useWakeLock';
 import { useTrips } from '@app/state/TripStore';
-import { sceneScript, warmupScript } from './script';
-
-const voice = createBrowserVoice();
+import { SceneView } from './SceneView';
+import { TripSettingsSheet } from './TripSettingsSheet';
+import { WarmupView } from './WarmupView';
+import { destinationScript, sceneScript, warmupScript } from './script';
+import { useAnnouncer } from './useAnnouncer';
 
 function useNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
@@ -49,80 +44,34 @@ function useNow(active: boolean): number {
   return now;
 }
 
-export function Road({ trip, onNewView }: { readonly trip: Trip; readonly onNewView: () => void }) {
+function progress(trip: Trip): string {
+  const total = totalStops(trip);
+  const destination = cardById(trip.destinationId)?.title;
+  const stop = total ? `Stop ${Math.min(stopNumber(trip), total)} of ${total}` : `Stop ${stopNumber(trip)}`;
+  return destination ? `${stop} · ${destination}` : stop;
+}
+
+function primaryLabel(round: Round): string {
+  if (round.kind === 'warmup') {
+    if (round.phase === 'brief') return round.pass > 0 ? 'Go again' : 'Start the warm-up';
+    return 'Bank the mile';
+  }
+  if (round.phase === 'brief') return round.arrival ? 'Start the arrival' : 'Start the scene';
+  if (round.phase === 'live') return 'Land it';
+  return round.arrival ? 'Finish the trip' : 'Bank the mile';
+}
+
+export function Road({ trip }: { readonly trip: Trip }) {
   const { update, close } = useTrips();
   const round = trip.round;
   const running = round?.phase === 'live' && isRunning(round.clock);
   const now = useNow(running);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [note, setNote] = useState('');
-  const [banked, setBanked] = useState(false);
+  const [souvenir, setSouvenir] = useState('');
+  const content = useRef<HTMLIonContentElement>(null);
+  const { say, announce, stop, sayNow } = useAnnouncer(trip);
 
   useWakeLock(true);
-
-  const say = useCallback(
-    (text: string) => {
-      if (trip.settings.voice && isAudioUnlocked()) voice.say(text);
-    },
-    [trip.settings.voice],
-  );
-
-  const announce = useCallback(
-    (events: readonly TripEvent[], next: Trip) => {
-      for (const event of events) {
-        if (event === 'twist' && next.round?.kind === 'scene') {
-          chime('twist');
-          const twist = cardById(next.round.twistId);
-          if (twist) say(`Twist. ${twist.prompt}`);
-        }
-        if (event === 'time-up') {
-          chime('time-up');
-          if ('vibrate' in navigator) navigator.vibrate(200);
-          say('Time. One last line lands it.');
-        }
-        if (event === 'half-life-pass') {
-          chime('time-up');
-          say('Again. Same story, half the time.');
-        }
-        if (event === 'warmup-done') chime('time-up');
-      }
-    },
-    [say],
-  );
-
-  // Let the clock move the round on: twists at halfway, the button at zero.
-  useEffect(() => {
-    if (!running) return;
-    const result = tick(trip, now);
-    if (result.trip === trip) return;
-    update((current) => (current === trip ? result.trip : current));
-    announce(result.events, result.trip);
-  }, [now, running, trip, update, announce]);
-
-  // Read each new hand aloud once, if a tap has already unlocked audio.
-  const handKey =
-    round?.phase === 'brief'
-      ? round.kind === 'scene'
-        ? `${round.whereId}|${round.whoId}|${round.howId ?? ''}`
-        : `${round.cardId}|${round.pass}`
-      : '';
-  useEffect(() => {
-    if (!handKey || !trip.round) return;
-    if (trip.round.kind === 'scene') say(sceneScript(trip, trip.round));
-    else if (trip.round.pass === 0) say(warmupScript(trip.round));
-    // Only a new hand should trigger reading, not every trip change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handKey]);
-
-  // Each new step of a round starts at the top, so the timer or the hand is what you see.
-  const viewKey = round ? `${round.kind}|${round.phase}|${handKey}` : '';
-  useEffect(() => {
-    if (viewKey) onNewView();
-  }, [viewKey, onNewView]);
-
-  useEffect(() => () => {
-    voice.stop();
-  }, []);
 
   const act = useCallback(
     (step: (trip: Trip) => Trip) => {
@@ -131,387 +80,222 @@ export function Road({ trip, onNewView }: { readonly trip: Trip; readonly onNewV
     [update],
   );
 
-  const primary = useMemo<(() => void) | null>(() => {
-    if (!round) return null;
-    if (round.phase === 'brief') {
-      return () => {
-        voice.stop();
-        chime('start');
-        setBanked(false);
-        act((t) => startRound(t, Date.now()));
-      };
-    }
-    if (round.kind === 'scene' && round.phase === 'live') {
-      return () => {
-        act((t) => land(t, Date.now()));
-        chime('time-up');
-        say('One last line lands it.');
-      };
-    }
-    if (canBank(round)) {
-      return () => {
-        chime('mile');
-        act((t) => bank(t, Date.now(), note));
-        setNote('');
-        setBanked(true);
-      };
-    }
-    return null;
-  }, [round, act, note, say]);
+  // Let the clock move the round on: the twist at 60%, the landing chime, the last line.
+  useEffect(() => {
+    if (!running) return;
+    const result = tick(trip, now);
+    if (result.trip === trip) return;
+    update((current) => (current === trip ? result.trip : current));
+    announce(result.events, result.trip);
+  }, [now, running, trip, update, announce]);
 
+  // Read each new hand aloud once, and bring the top of the page back into view.
+  const handKey =
+    round?.phase === 'brief'
+      ? round.kind === 'scene'
+        ? `${round.whereId}|${round.whoId}|${round.howId ?? ''}`
+        : `${round.cardId}|${round.pass}`
+      : '';
+  const viewKey = round ? `${round.kind}|${round.phase}|${handKey}` : '';
+  useEffect(() => {
+    void content.current?.scrollToTop(200);
+  }, [viewKey]);
+  useEffect(() => {
+    const current = trip.round;
+    if (!handKey || !current) return;
+    if (current.kind === 'scene') say(sceneScript(trip, current));
+    else if (current.pass === 0) {
+      say(trip.log.length === 0 ? `${destinationScript(trip)} ${warmupScript(current)}` : warmupScript(current));
+    }
+    // Only a new hand should trigger reading, not every trip change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handKey]);
+
+  let primary: (() => void) | null = null;
+  if (round?.phase === 'brief') {
+    primary = () => {
+      stop();
+      chime('start');
+      act((t) => startRound(t, Date.now()));
+    };
+  } else if (round?.kind === 'scene' && round.phase === 'live') {
+    primary = () => {
+      chime('time-up');
+      act((t) => land(t, Date.now()));
+    };
+  } else if (canBank(round)) {
+    primary = () => {
+      chime('mile');
+      act((t) => bank(t, Date.now(), souvenir));
+      setSouvenir('');
+    };
+  }
+
+  const primaryRef = useRef(primary);
+  useEffect(() => {
+    primaryRef.current = primary;
+  });
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-      if (event.code !== 'Space' || !primary) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, ion-input, ion-modal')) return;
+      if (event.code !== 'Space' || !primaryRef.current) return;
       event.preventDefault();
       unlockAudio();
-      primary();
+      primaryRef.current();
     };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
     };
-  }, [primary]);
+  }, []);
 
   const missing = missingSuits(trip);
+  const paused = round ? isPaused(round) : false;
+  const twistReady = round?.kind === 'scene' && round.phase === 'live' && round.twistId !== null && !round.twistShown;
 
   return (
-    <div
-      className="stack"
-      style={{ gap: 'var(--space-3)' }}
-      onPointerDown={() => {
-        unlockAudio();
-      }}
-    >
-      <header className="trip-bar">
-        <div>
-          <p className="trip-name">{trip.name}</p>
-          <MilePost miles={trip.miles} />
-        </div>
-        <button
-          type="button"
-          className="btn"
-          aria-expanded={settingsOpen}
-          onClick={() => {
-            setSettingsOpen((open) => !open);
-          }}
-        >
-          {settingsOpen ? 'Done' : 'Settings'}
-        </button>
-      </header>
-
-      {settingsOpen && (
-        <section className="stack" style={{ gap: 'var(--space-4)' }} aria-label="Trip settings">
-          <SettingsFields
-            settings={trip.settings}
-            onChange={(settings) => {
-              act((t) => updateSettings(t, settings));
-            }}
-          />
-          <fieldset>
-            <legend>Players</legend>
-            {trip.players.map((player, index) => (
-              <input
-                key={player.id}
-                className="field"
-                defaultValue={player.name}
-                maxLength={24}
-                aria-label={`Player ${index + 1} name`}
-                onBlur={(event) => {
-                  act((t) => renamePlayer(t, player.id, event.target.value));
-                }}
-              />
-            ))}
-          </fieldset>
-          <button type="button" className="btn btn-block" onClick={close}>
-            End this trip
-          </button>
-        </section>
-      )}
-
-      {!settingsOpen && missing.length > 0 && (
-        <p className="notice">
-          No {missing.join(' or ')} cards fit these settings. Turn off a filter in Settings to keep playing.
-        </p>
-      )}
-
-      {!settingsOpen && banked && round?.phase === 'brief' && (
-        <p className="notice" role="status">
-          Mile banked. That’s {trip.miles} together.
-        </p>
-      )}
-
-      {!settingsOpen && round?.kind === 'scene' && (
-        <Scene trip={trip} round={round} now={now} act={act} />
-      )}
-      {!settingsOpen && round?.kind === 'warmup' && (
-        <Warmup trip={trip} round={round} now={now} act={act} />
-      )}
-
-      {!settingsOpen && round && (
-        <div className="dock">
-          {round.phase === 'button' && (
-            <label className="label small muted">
-              A line for the journal, if you want
-              <input
-                className="field"
-                value={note}
-                maxLength={140}
-                placeholder="Dad was the GPS"
-                onChange={(event) => {
-                  setNote(event.target.value);
-                }}
-              />
-            </label>
-          )}
-          {primary && (
-            <button type="button" className="btn btn-primary btn-big btn-block" onClick={primary}>
-              {primaryLabel(round)}
-            </button>
-          )}
-          <SecondaryActions trip={trip} act={act} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function primaryLabel(round: SceneRound | WarmupRound): string {
-  if (round.phase === 'brief') {
-    if (round.kind === 'warmup') return round.pass > 0 ? 'Go again' : 'Start the warm-up';
-    return 'Start the scene';
-  }
-  if (round.kind === 'scene') return round.phase === 'live' ? 'Land it' : 'Bank the mile';
-  return 'Bank the mile';
-}
-
-interface PartProps<R> {
-  readonly trip: Trip;
-  readonly round: R;
-  readonly now: number;
-  readonly act: (step: (trip: Trip) => Trip) => void;
-}
-
-function Scene({ trip, round, now, act }: PartProps<SceneRound>) {
-  const where = cardById(round.whereId);
-  const who = cardById(round.whoId);
-  const how = cardById(round.howId);
-  const twist = cardById(round.twistId);
-  const opener = trip.players[trip.opener]?.name ?? 'Someone';
-  const hand = [where, who, how].filter((card) => card !== null);
-  const left = remaining(round.clock, now);
-  const paused = isPaused(round);
-
-  if (round.phase === 'brief') {
-    return (
-      <section className="stack" aria-label="This scene">
-        <p className="opener">{opener} opens.</p>
-        <div className="stack" key={`${round.whereId}${round.whoId}`}>
-          {hand.map((card) => (
-            <SignCard
-              key={card.id}
-              card={card}
-              compact
-              showTip={false}
-              className="deal-in"
-              action={
-                <button
-                  type="button"
-                  className="icon-btn"
-                  aria-label={`Swap the ${card.suit} card`}
-                  title="Swap this card"
-                  onClick={() => {
-                    act((t) => swap(t, card.suit as SwappableSuit));
-                  }}
-                >
-                  ↻
-                </button>
-              }
-            />
-          ))}
-        </div>
-      </section>
-    );
-  }
-
-  const speaker = trip.players[speakerIndex(trip)]?.name;
-  const cue = trip.settings.callTurns ? lineCue(how?.cue, round.line) : ruleReminder(how?.cue);
-
-  return (
-    <section className="stack" aria-label="Scene in progress">
-      <div className="stage" aria-live="polite">
-        {round.phase === 'live' ? (
-          <>
-            <p className="stage-state">{paused ? 'Paused' : `${opener} opened`}</p>
-            <p className="timer" data-urgent={left <= 10_000 && !paused} role="timer">
-              {formatClock(left)}
-            </p>
-            {trip.settings.callTurns && speaker && <p className="speaker">{speaker}</p>}
-            {cue && <p className="cue">{cue}</p>}
-          </>
-        ) : (
-          <>
-            <p className="button-call">Land it.</p>
-            <p className="muted">Whoever has the turn says one last line that ends the scene.</p>
-          </>
-        )}
-      </div>
-
-      {round.twistShown && twist && <SignCard card={twist} compact showTip={false} />}
-
-      {round.phase === 'live' && (
-        <div className="row">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              act((t) => (paused ? resume(t, Date.now()) : pause(t, Date.now())));
-            }}
-          >
-            {paused ? 'Resume' : 'Pause'}
-          </button>
-          {trip.settings.callTurns && (
-            <button
-              type="button"
-              className="btn btn-light"
+    <IonPage>
+      <IonHeader translucent>
+        <IonToolbar>
+          <IonTitle>
+            <div style={{ lineHeight: 1.15 }}>{trip.name}</div>
+            <div style={{ fontSize: 12, fontWeight: 500, opacity: 0.6 }}>{progress(trip)}</div>
+          </IonTitle>
+          <IonButtons slot="end">
+            <IonButton
+              aria-label="Trip settings"
               onClick={() => {
-                act(nextLine);
+                setSettingsOpen(true);
               }}
             >
-              Next: {trip.players[(speakerIndex(trip) + 1) % trip.players.length]?.name}
-            </button>
+              <IonIcon slot="icon-only" icon={ellipsisHorizontalCircleOutline} />
+            </IonButton>
+          </IonButtons>
+        </IonToolbar>
+      </IonHeader>
+
+      <IonContent
+        ref={content}
+        fullscreen
+        color="light"
+        onPointerDown={() => {
+          unlockAudio();
+        }}
+      >
+        <div className="wrap" style={{ paddingTop: 8 }}>
+          {missing.length > 0 && (
+            <p className="lede">No {missing.join(' or ')} cards fit these settings. Turn a filter off in trip settings.</p>
           )}
+          {round?.kind === 'scene' && (
+            <SceneView trip={trip} round={round} now={now} act={act} souvenir={souvenir} onSouvenir={setSouvenir} />
+          )}
+          {round?.kind === 'warmup' && <WarmupView trip={trip} round={round} now={now} />}
         </div>
+      </IonContent>
+
+      {round && (
+        <IonFooter className="dock" translucent>
+          <IonToolbar>
+            <div className="wrap" style={{ display: 'grid', gap: 8 }}>
+              {round.phase === 'live' && (
+                <div className="button-row">
+                  <IonButton
+                    fill="outline"
+                    expand="block"
+                    className="big"
+                    onClick={() => {
+                      act((t) => (paused ? resume(t, Date.now()) : pause(t, Date.now())));
+                    }}
+                  >
+                    <IonIcon slot="start" icon={paused ? playIcon : pauseIcon} />
+                    {paused ? 'Resume' : 'Pause'}
+                  </IonButton>
+                  {twistReady && (
+                    <IonButton
+                      fill="outline"
+                      expand="block"
+                      className="big"
+                      onClick={() => {
+                        act(throwTwist);
+                        announce(['twist'], { ...trip, round: { ...round, twistShown: true } });
+                      }}
+                    >
+                      Throw the twist
+                    </IonButton>
+                  )}
+                  {round.kind === 'warmup' && cardById(round.cardId)?.warmup?.turnCues && (
+                    <IonButton
+                      fill="outline"
+                      expand="block"
+                      className="big"
+                      onClick={() => {
+                        act(nextTurn);
+                      }}
+                    >
+                      Next turn
+                    </IonButton>
+                  )}
+                </div>
+              )}
+              {primary && (
+                <IonButton expand="block" className="big" onClick={primary}>
+                  {primaryLabel(round)}
+                </IonButton>
+              )}
+              {round.phase === 'brief' && (
+                <div className="button-row">
+                  {canWarmUpInstead(trip) && (
+                    <IonButton
+                      fill="clear"
+                      onClick={() => {
+                        act((t) => startWarmup(t));
+                      }}
+                    >
+                      Warm-up
+                    </IonButton>
+                  )}
+                  {round.kind === 'warmup' && round.pass === 0 && (
+                    <IonButton
+                      fill="clear"
+                      onClick={() => {
+                        act((t) => startWarmup(t));
+                      }}
+                    >
+                      Another warm-up
+                    </IonButton>
+                  )}
+                  {round.kind === 'scene' && (
+                    <IonButton
+                      fill="clear"
+                      onClick={() => {
+                        unlockAudio();
+                        sayNow(sceneScript(trip, round));
+                      }}
+                    >
+                      <IonIcon slot="start" icon={volumeHigh} />
+                      Read again
+                    </IonButton>
+                  )}
+                </div>
+              )}
+            </div>
+          </IonToolbar>
+        </IonFooter>
       )}
 
-      <details className="peek">
-        <summary>The cards</summary>
-        <div className="stack">
-          {hand.map((card) => (
-            <SignCard key={card.id} card={card} compact />
-          ))}
-        </div>
-      </details>
-    </section>
-  );
-}
-
-function Warmup({ trip, round, now, act }: PartProps<WarmupRound>) {
-  const card = cardById(round.cardId);
-  if (!card?.warmup) return null;
-  const left = remaining(round.clock, now);
-  const paused = isPaused(round);
-  const cues = card.warmup.turnCues;
-  const cue = cues ? cues[round.turn % cues.length] : null;
-  const passLabel = card.warmup.halfLife ? ['Full story', 'Half the time', 'Half again'][round.pass] : null;
-
-  return (
-    <section className="stack" aria-label="Warm-up">
-      <SignCard card={card} />
-      {round.seed && (
-        <p className="subtitle">
-          <span className="muted">Start with: </span>
-          {round.seed}
-        </p>
-      )}
-      {round.phase !== 'brief' || round.pass > 0 ? (
-        <div className="stage" aria-live="polite">
-          {passLabel && <p className="stage-state">{passLabel}</p>}
-          {round.phase === 'done' ? (
-            <p className="button-call">That’s it.</p>
-          ) : (
-            <p className="timer" data-urgent={left <= 10_000 && !paused} role="timer">
-              {formatClock(left)}
-            </p>
-          )}
-          {round.phase === 'live' && cue && (
-            <>
-              <p className="speaker">{trip.players[speakerIndex(trip)]?.name}</p>
-              <p className="cue">{cue}</p>
-            </>
-          )}
-        </div>
-      ) : null}
-      {round.phase === 'live' && (
-        <div className="row">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              act((t) => (paused ? resume(t, Date.now()) : pause(t, Date.now())));
-            }}
-          >
-            {paused ? 'Resume' : 'Pause'}
-          </button>
-          {cues && (
-            <button
-              type="button"
-              className="btn btn-light"
-              onClick={() => {
-                act(nextLine);
-              }}
-            >
-              Next turn
-            </button>
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function SecondaryActions({ trip, act }: { readonly trip: Trip; readonly act: (step: (trip: Trip) => Trip) => void }) {
-  const round = trip.round;
-  if (!round) return null;
-  const isBrief = round.phase === 'brief';
-  return (
-    <div className="row">
-      {round.kind === 'scene' && isBrief && (
-        <button
-          type="button"
-          className="btn btn-quiet"
-          onClick={() => {
-            act((t) => startWarmup(t));
-          }}
-        >
-          Warm-up instead
-        </button>
-      )}
-      {round.kind === 'warmup' && (
-        <button
-          type="button"
-          className="btn btn-quiet"
-          onClick={() => {
-            act((t) => (isBrief && round.pass === 0 ? startWarmup(t) : scrap(t)));
-          }}
-        >
-          {isBrief && round.pass === 0 ? 'Different warm-up' : 'Back to scenes'}
-        </button>
-      )}
-      {round.kind === 'scene' && !isBrief && (
-        <button
-          type="button"
-          className="btn btn-quiet"
-          onClick={() => {
-            voice.stop();
-            act(scrap);
-          }}
-        >
-          Scrap it, no mile
-        </button>
-      )}
-      {round.kind === 'scene' && isBrief && (
-        <button
-          type="button"
-          className="btn btn-quiet"
-          onClick={() => {
-            voice.say(sceneScript(trip, round));
-          }}
-        >
-          Read it again
-        </button>
-      )}
-    </div>
+      <TripSettingsSheet
+        trip={trip}
+        isOpen={settingsOpen}
+        act={act}
+        onClose={() => {
+          setSettingsOpen(false);
+        }}
+        onEnd={() => {
+          setSettingsOpen(false);
+          close();
+        }}
+      />
+    </IonPage>
   );
 }

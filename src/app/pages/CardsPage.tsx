@@ -1,4 +1,4 @@
-import { IonContent, IonPage } from '@ionic/react';
+import { IonContent, IonHeader, IonLabel, IonPage, IonSegment, IonSegmentButton, IonTitle, IonToolbar } from '@ionic/react';
 import { useMemo, useState } from 'react';
 import { CARDS } from '@game/cards';
 import { SUITS, type Suit } from '@game/types';
@@ -12,33 +12,36 @@ export function CardsPage() {
 
   return (
     <IonPage>
-      <IonContent className="page">
-        <main className="page-inner" style={{ maxWidth: '64rem' }}>
-          <h1 className="title">The deck</h1>
-          <p className="muted">
-            Every card in the game. The colour tells you its job, the same way road signs do.
-          </p>
-          <div className="chips" role="group" aria-label="Show cards from">
+      <IonHeader translucent>
+        <IonToolbar>
+          <IonTitle>Cards</IonTitle>
+        </IonToolbar>
+        <IonToolbar>
+          <IonSegment
+            scrollable
+            value={filter}
+            onIonChange={(event) => {
+              setFilter((event.detail.value as Filter | undefined) ?? 'all');
+            }}
+          >
             {(['all', ...SUITS] as const).map((suit) => (
-              <button
-                key={suit}
-                type="button"
-                className="chip"
-                aria-pressed={filter === suit}
-                onClick={() => {
-                  setFilter(suit);
-                }}
-              >
-                {suit === 'all' ? 'All' : SUIT_LABEL[suit]} {suit === 'all' ? CARDS.length : CARDS.filter((c) => c.suit === suit).length}
-              </button>
+              <IonSegmentButton key={suit} value={suit}>
+                <IonLabel>{suit === 'all' ? 'All' : SUIT_LABEL[suit]}</IonLabel>
+              </IonSegmentButton>
             ))}
-          </div>
-          <div className="deck-grid">
-            {cards.map((card) => (
-              <SignCard key={card.id} card={card} showTraits />
-            ))}
-          </div>
-        </main>
+          </IonSegment>
+        </IonToolbar>
+      </IonHeader>
+      <IonContent fullscreen color="light">
+        <p className="section-note" style={{ paddingTop: 12 }}>
+          {cards.length} {cards.length === 1 ? 'card' : 'cards'}. The colour tells you a card’s job, the way road signs
+          do.
+        </p>
+        <div className="deck-grid">
+          {cards.map((card) => (
+            <SignCard key={card.id} card={card} compact showMarks />
+          ))}
+        </div>
       </IonContent>
     </IonPage>
   );

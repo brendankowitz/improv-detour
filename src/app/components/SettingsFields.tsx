@@ -1,129 +1,149 @@
+import { IonItem, IonLabel, IonList, IonListHeader, IonNote, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonToggle } from '@ionic/react';
 import { PRESETS, matchingPreset, type PresetId } from '@game/filters';
-import type { SceneSeconds, Settings } from '@game/types';
-import { Toggle } from './Toggle';
+import type { Player, SceneSeconds, Settings, TripLength } from '@game/types';
 
-const LENGTHS: readonly SceneSeconds[] = [45, 60, 90];
+const LENGTHS: readonly SceneSeconds[] = [45, 60, 75];
+const TRIP_LENGTHS: readonly { id: TripLength; label: string }[] = [
+  { id: 'short', label: 'Short' },
+  { id: 'standard', label: 'Standard' },
+  { id: 'open', label: 'Open road' },
+];
+const TRIP_NOTE: Record<TripLength, string> = {
+  short: 'Four stops: a warm-up, two scenes and the arrival. About eight minutes.',
+  standard: 'Six stops: a warm-up, four scenes and the arrival. About twelve minutes.',
+  open: 'Keep going as long as you like, then head for the destination.',
+};
 
 interface SettingsFieldsProps {
   readonly settings: Settings;
   readonly onChange: (settings: Settings) => void;
+  readonly players: readonly Player[];
+  /** The driver's player id, or null. */
+  readonly driverId: string | null;
+  readonly onDriverChange: (driverId: string | null) => void;
 }
 
-/** Where you are and how you want to play. Shared by trip setup and the in-trip settings sheet. */
-export function SettingsFields({ settings, onChange }: SettingsFieldsProps) {
+/** Where you are and how you want to play: grouped iOS settings lists. */
+export function SettingsFields({ settings, onChange, players, driverId, onDriverChange }: SettingsFieldsProps) {
   const { filters } = settings;
   const preset = matchingPreset(filters);
   const setFilters = (patch: Partial<Settings['filters']>) => {
     onChange({ ...settings, filters: { ...filters, ...patch } });
   };
+  const toggle = (label: string, checked: boolean, change: (value: boolean) => void, note?: string) => (
+    <IonItem>
+      <IonToggle
+        checked={checked}
+        onIonChange={(event) => {
+          change(event.detail.checked);
+        }}
+      >
+        <IonLabel>
+          {label}
+          {note && <IonNote className="ion-text-wrap" style={{ display: 'block', fontSize: 13 }}>{note}</IonNote>}
+        </IonLabel>
+      </IonToggle>
+    </IonItem>
+  );
 
   return (
     <>
-      <fieldset>
-        <legend>Where are you playing?</legend>
-        <div className="chips">
+      <IonListHeader>
+        <IonLabel>Where are you?</IonLabel>
+      </IonListHeader>
+      <div style={{ padding: '4px 16px 10px' }}>
+        <IonSegment
+          value={preset ?? 'custom'}
+          onIonChange={(event) => {
+            const id = event.detail.value as PresetId | 'custom' | undefined;
+            if (id && id !== 'custom') setFilters({ ...PRESETS[id].filters });
+          }}
+        >
           {(Object.keys(PRESETS) as PresetId[]).map((id) => (
-            <button
-              key={id}
-              type="button"
-              className="chip"
-              aria-pressed={preset === id}
-              onClick={() => {
-                setFilters({ ...PRESETS[id].filters, stretch: filters.stretch });
+            <IonSegmentButton key={id} value={id}>
+              <IonLabel>{PRESETS[id].label}</IonLabel>
+            </IonSegmentButton>
+          ))}
+        </IonSegment>
+      </div>
+      <IonList inset>
+        {toggle('Voice only', filters.voiceOnly, (voiceOnly) => { setFilters({ voiceOnly }); }, 'Every card works by ear, so a driver can play.')}
+        {filters.voiceOnly && players.length > 0 && (
+          <IonItem>
+            <IonSelect
+              label="Who’s driving?"
+              interface="action-sheet"
+              value={driverId ?? 'none'}
+              onIonChange={(event) => {
+                const value = event.detail.value as string;
+                onDriverChange(value === 'none' ? null : value);
               }}
             >
-              {PRESETS[id].label}
-            </button>
-          ))}
-        </div>
-        <Toggle
-          label="Hands-free"
-          hint="Someone can only use their voice, like a driver."
-          checked={filters.handsFree}
-          onChange={(handsFree) => {
-            setFilters({ handsFree });
-          }}
-        />
-        <Toggle
-          label="Seated"
-          hint="Nobody needs to stand up or move around."
-          checked={filters.seated}
-          onChange={(seated) => {
-            setFilters({ seated });
-          }}
-        />
-        <Toggle
-          label="Quiet"
-          hint="Leave out cards that get loud."
-          checked={filters.quiet}
-          onChange={(quiet) => {
-            setFilters({ quiet });
-          }}
-        />
-      </fieldset>
+              <IonSelectOption value="none">Nobody playing</IonSelectOption>
+              {players.map((player) => (
+                <IonSelectOption key={player.id} value={player.id}>
+                  {player.name}
+                </IonSelectOption>
+              ))}
+            </IonSelect>
+          </IonItem>
+        )}
+        {toggle('Quiet', filters.quiet, (quiet) => { setFilters({ quiet }); }, 'Nothing louder than a table voice.')}
+        {toggle('Moving allowed', filters.moving, (moving) => { setFilters({ moving }); }, 'Adds cards where someone stands up.')}
+      </IonList>
+      {filters.voiceOnly && (
+        <p className="section-note">The driver never opens a scene and never lands one. They can say “driving” to drop out.</p>
+      )}
 
-      <fieldset>
-        <legend>Scene length</legend>
-        <div className="chips">
+      <IonListHeader>
+        <IonLabel>Trip</IonLabel>
+      </IonListHeader>
+      <div style={{ padding: '4px 16px 6px' }}>
+        <IonSegment
+          value={settings.length}
+          onIonChange={(event) => {
+            const length = event.detail.value as TripLength | undefined;
+            if (length) onChange({ ...settings, length });
+          }}
+        >
+          {TRIP_LENGTHS.map(({ id, label }) => (
+            <IonSegmentButton key={id} value={id}>
+              <IonLabel>{label}</IonLabel>
+            </IonSegmentButton>
+          ))}
+        </IonSegment>
+      </div>
+      <p className="section-note">{TRIP_NOTE[settings.length]}</p>
+
+      <IonListHeader>
+        <IonLabel>Scene length</IonLabel>
+      </IonListHeader>
+      <div style={{ padding: '4px 16px 10px' }}>
+        <IonSegment
+          value={String(settings.sceneSeconds)}
+          onIonChange={(event) => {
+            const seconds = Number(event.detail.value) as SceneSeconds;
+            if (LENGTHS.includes(seconds)) onChange({ ...settings, sceneSeconds: seconds });
+          }}
+        >
           {LENGTHS.map((seconds) => (
-            <button
-              key={seconds}
-              type="button"
-              className="chip"
-              aria-pressed={settings.sceneSeconds === seconds}
-              onClick={() => {
-                onChange({ ...settings, sceneSeconds: seconds });
-              }}
-            >
-              {seconds} seconds
-            </button>
+            <IonSegmentButton key={seconds} value={String(seconds)}>
+              <IonLabel>{seconds} sec</IonLabel>
+            </IonSegmentButton>
           ))}
-        </div>
-      </fieldset>
+        </IonSegment>
+      </div>
 
-      <fieldset>
-        <legend>How you play</legend>
-        <Toggle
-          label="How cards"
-          hint="A rule for each scene, like “questions only”."
-          checked={settings.useHow}
-          onChange={(useHow) => {
-            onChange({ ...settings, useHow });
-          }}
-        />
-        <Toggle
-          label="Twists"
-          hint="Sometimes a change lands halfway through."
-          checked={settings.useTwists}
-          onChange={(useTwists) => {
-            onChange({ ...settings, useTwists });
-          }}
-        />
-        <Toggle
-          label="Stretch cards"
-          hint="Harder, drier rules for confident players."
-          checked={filters.stretch}
-          onChange={(stretch) => {
-            setFilters({ stretch });
-          }}
-        />
-        <Toggle
-          label="Call each turn"
-          hint="The phone names who speaks next. Needs a tap per line."
-          checked={settings.callTurns}
-          onChange={(callTurns) => {
-            onChange({ ...settings, callTurns });
-          }}
-        />
-        <Toggle
-          label="Read cards aloud"
-          hint="The phone reads each hand, so nobody has to."
-          checked={settings.voice}
-          onChange={(voice) => {
-            onChange({ ...settings, voice });
-          }}
-        />
-      </fieldset>
+      <IonListHeader>
+        <IonLabel>Play</IonLabel>
+      </IonListHeader>
+      <IonList inset>
+        {toggle('How cards', settings.useHow, (useHow) => { onChange({ ...settings, useHow }); }, 'A rule for the scene, from the second scene on.')}
+        {toggle('Twists', settings.useTwists, (useTwists) => { onChange({ ...settings, useTwists }); }, 'Every other scene, something changes at the 60% mark.')}
+        {toggle('Stretch cards', filters.stretch, (stretch) => { setFilters({ stretch }); }, 'Harder, drier rules once you’ve warmed up.')}
+        {toggle('Director', settings.director, (director) => { onChange({ ...settings, director }); }, 'Someone off-scene can swap a card, throw the twist and call “Scene!”')}
+        {toggle('Read cards aloud', settings.voice, (voice) => { onChange({ ...settings, voice }); })}
+      </IonList>
     </>
   );
 }

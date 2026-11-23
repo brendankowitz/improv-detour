@@ -1,75 +1,70 @@
 import { CARDS, cardById } from './cards';
+import { pickCast, type Cast } from './casting';
 import * as clock from './clock';
 import { fits } from './filters';
-import { nextRandom, pickIndex } from './rng';
+import { pickIndex } from './rng';
 import type {
   Card,
-  Cue,
   LogEntry,
   Round,
   SceneRound,
   Settings,
+  Souvenir,
   Suit,
   Trip,
+  TripLength,
   WarmupRound,
 } from './types';
 
+export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 6;
-export const TWIST_CHANCE = 1 / 3;
+export const STOPS: Record<TripLength, number | null> = { short: 4, standard: 6, open: null };
+/** The twist lands at this fraction of the scene. */
+export const TWIST_AT = 0.6;
+/** The landing chime sounds this long before time is up. */
+export const LANDING_MS = 10_000;
+/** Easy Hows only until this many scenes with a How have been banked. */
+export const EASY_HOW_SCENES = 2;
 /** Half-Life replays the same story at these fractions of the warm-up's length. */
 export const HALF_LIFE = [1, 0.5, 0.25] as const;
 
 export const DEFAULT_SETTINGS: Settings = {
-  filters: { quiet: false, handsFree: false, seated: true, stretch: true },
+  filters: { voiceOnly: false, quiet: true, moving: false, stretch: true },
   sceneSeconds: 60,
+  length: 'standard',
   useHow: true,
   useTwists: true,
-  callTurns: false,
+  director: false,
   voice: true,
 };
 
 /** Something the UI should announce: a chime, a spoken line, a vibration. */
-export type TripEvent = 'twist' | 'time-up' | 'half-life-pass' | 'warmup-done';
+export type TripEvent = 'twist' | 'landing' | 'time-up' | 'half-life-pass' | 'warmup-done';
 
-const EMPTY_SEEN: Record<Suit, readonly string[]> = { where: [], who: [], how: [], twist: [], warmup: [] };
+const EMPTY_SEEN: Record<Suit, readonly string[]> = {
+  where: [], who: [], how: [], twist: [], warmup: [], destination: [],
+};
 
 export interface NewTripInput {
   readonly id: string;
   readonly name: string;
   readonly players: readonly string[];
+  /** Index into `players` of whoever is driving, if anyone. */
+  readonly driverIndex: number | null;
   readonly settings: Settings;
   readonly now: number;
   readonly seed: number;
 }
 
-export function newTrip(input: NewTripInput): Trip {
-  const names = input.players.map((name) => name.trim()).filter(Boolean).slice(0, MAX_PLAYERS);
-  if (names.length === 0) throw new Error('A trip needs at least one player name.');
-  const trip: Trip = {
-    id: input.id,
-    name: input.name.trim() || 'The long way',
-    createdAt: input.now,
-    players: names.map((name, index) => ({ id: `p${index + 1}`, name })),
-    settings: input.settings,
-    miles: 0,
-    log: [],
-    seen: EMPTY_SEEN,
-    opener: 0,
-    rngState: input.seed | 0,
-    round: null,
-  };
-  return dealScene(trip);
+// ---------------------------------------------------------------- drawing
+
+export function poolFor(trip: Pick<Trip, 'settings'>, suit: Suit): readonly Card[] {
+  return CARDS.filter((card) => card.suit === suit && fits(card, trip.settings.filters));
 }
 
-export function poolFor(trip: Pick<Trip, 'settings' | 'players'>, suit: Suit): readonly Card[] {
-  return CARDS.filter(
-    (card) => card.suit === suit && fits(card, trip.settings.filters, trip.players.length),
-  );
-}
-
-/** The suits a scene needs that the current filters leave empty. */
-export function missingSuits(trip: Pick<Trip, 'settings' | 'players'>): readonly Suit[] {
-  const needed: Suit[] = ['where', 'who'];
+/** The suits a trip needs that the current filters leave empty. */
+export function missingSuits(trip: Pick<Trip, 'settings'>): readonly Suit[] {
+  const needed: Suit[] = ['where', 'who', 'warmup', 'destination'];
   if (trip.settings.useHow) needed.push('how');
   return needed.filter((suit) => poolFor(trip, suit).length === 0);
 }
@@ -80,8 +75,14 @@ interface Drawn {
 }
 
 /** Draws without repeats until the suit's pool is used up, then reshuffles it. */
-export function draw(trip: Trip, suit: Suit, avoid: readonly string[] = []): Drawn | null {
-  const pool = poolFor(trip, suit).filter((card) => !avoid.includes(card.id));
+export function draw(
+  trip: Trip,
+  suit: Suit,
+  options: { readonly avoid?: readonly string[]; readonly allow?: (card: Card) => boolean } = {},
+): Drawn | null {
+  const avoid = options.avoid ?? [];
+  const allow = options.allow ?? (() => true);
+  const pool = poolFor(trip, suit).filter((card) => !avoid.includes(card.id) && allow(card));
   if (pool.length === 0) return null;
   let seen = trip.seen[suit];
   let fresh = pool.filter((card) => !seen.includes(card.id));
@@ -92,57 +93,151 @@ export function draw(trip: Trip, suit: Suit, avoid: readonly string[] = []): Dra
   const [index, rngState] = pickIndex(trip.rngState, fresh.length);
   const card = fresh[index];
   if (!card) return null;
-  return {
-    card,
-    trip: { ...trip, rngState, seen: { ...trip.seen, [suit]: [...seen, card.id] } },
+  return { card, trip: { ...trip, rngState, seen: { ...trip.seen, [suit]: [...seen, card.id] } } };
+}
+
+// ---------------------------------------------------------------- trip shape
+
+/** The number of the stop now being played, from 1. */
+export function stopNumber(trip: Trip): number {
+  return trip.log.length + 1;
+}
+
+export function totalStops(trip: Trip): number | null {
+  return STOPS[trip.settings.length];
+}
+
+function scenesBanked(trip: Trip): number {
+  return trip.log.filter((entry) => entry.kind !== 'warmup').length;
+}
+
+function howScenesBanked(trip: Trip): number {
+  return trip.log.filter((entry) => entry.cardIds.some((id) => cardById(id)?.suit === 'how')).length;
+}
+
+export function souvenirs(trip: Trip): readonly Souvenir[] {
+  return trip.log.flatMap((entry) => (entry.souvenir ? [entry.souvenir] : [])).reverse();
+}
+
+function isLastStop(trip: Trip): boolean {
+  const total = totalStops(trip);
+  return total !== null && stopNumber(trip) >= total;
+}
+
+// ---------------------------------------------------------------- starting
+
+export function newTrip(input: NewTripInput): Trip {
+  const names = input.players.map((name) => name.trim()).filter(Boolean).slice(0, MAX_PLAYERS);
+  if (names.length < MIN_PLAYERS) throw new Error(`A trip needs at least ${MIN_PLAYERS} players.`);
+  const players = names.map((name, index) => ({ id: `p${index + 1}`, name }));
+  const driver = input.driverIndex === null ? null : players[input.driverIndex];
+  let trip: Trip = {
+    id: input.id,
+    name: input.name.trim() || 'The long way',
+    createdAt: input.now,
+    players,
+    driverId: driver?.id ?? null,
+    settings: input.settings,
+    destinationId: '',
+    miles: 0,
+    log: [],
+    seen: EMPTY_SEEN,
+    rngState: input.seed | 0,
+    round: null,
+    finishedAt: null,
   };
+  const destination = draw(trip, 'destination');
+  if (destination) trip = { ...destination.trip, destinationId: destination.card.id };
+  return startWarmup(trip);
 }
 
-function sceneMs(trip: Trip): number {
-  return trip.settings.sceneSeconds * 1000;
+export function swapDestination(trip: Trip): Trip {
+  if (trip.log.length > 0) return trip;
+  const drawn = draw(trip, 'destination', { avoid: [trip.destinationId] });
+  return drawn ? { ...drawn.trip, destinationId: drawn.card.id } : trip;
 }
 
-/** Deals a fresh scene hand in the brief phase. Leaves `round` null if the filters leave a suit empty. */
+// ---------------------------------------------------------------- dealing
+
+function castFor(trip: Trip): Cast | null {
+  const past = trip.log
+    .filter((entry) => entry.castIds.length === 2)
+    .map((entry) => [entry.castIds[0] ?? '', entry.castIds[1] ?? ''] as const)
+    .reverse();
+  return pickCast(trip.players, trip.driverId, past, trip.settings.director);
+}
+
+/** Deals the next stop: the Arrival on the last stop, otherwise an ordinary scene. */
+export function dealNext(trip: Trip): Trip {
+  return isLastStop(trip) ? dealArrival(trip) : dealScene(trip);
+}
+
+/** Deals a scene hand in the brief phase. Leaves `round` null if the filters leave a suit empty. */
 export function dealScene(trip: Trip): Trip {
-  const where = draw(trip, 'where');
-  if (!where) return { ...trip, round: null };
-  const who = draw(where.trip, 'who');
-  if (!who) return { ...trip, round: null };
-  let next = who.trip;
+  return deal(trip, false);
+}
 
-  let howId: string | null = null;
-  if (next.settings.useHow) {
-    const how = draw(next, 'how');
-    if (!how) return { ...trip, round: null };
-    howId = how.card.id;
-    next = how.trip;
+/** Deals the final scene, set at the trip's destination. */
+export function dealArrival(trip: Trip): Trip {
+  return deal(trip, true);
+}
+
+function deal(trip: Trip, arrival: boolean): Trip {
+  const cast = castFor(trip);
+  if (!cast) return { ...trip, round: null };
+  const sceneNumber = scenesBanked(trip) + 1;
+  let next = trip;
+
+  let whereId = trip.destinationId;
+  if (!arrival || !cardById(trip.destinationId)) {
+    const where = draw(next, 'where');
+    if (!where) return { ...trip, round: null };
+    whereId = where.card.id;
+    next = where.trip;
+  }
+
+  const who = draw(next, 'who');
+  if (!who) return { ...trip, round: null };
+  next = who.trip;
+
+  const howId = dealHow(next, sceneNumber);
+  let howCard: Card | null = null;
+  if (howId) {
+    howCard = howId.card;
+    next = howId.trip;
   }
 
   let twistId: string | null = null;
-  if (next.settings.useTwists) {
-    const [roll, rngState] = nextRandom(next.rngState);
-    next = { ...next, rngState };
-    if (roll < TWIST_CHANCE) {
-      const twist = draw(next, 'twist');
-      if (twist) {
-        twistId = twist.card.id;
-        next = twist.trip;
-      }
+  const twistDue = !arrival && sceneNumber >= 2 && sceneNumber % 2 === 0 && howCard?.level !== 'stretch';
+  if (next.settings.useTwists && twistDue) {
+    const twist = draw(next, 'twist');
+    if (twist) {
+      twistId = twist.card.id;
+      next = twist.trip;
     }
   }
 
   const round: SceneRound = {
     kind: 'scene',
-    whereId: where.card.id,
+    arrival,
+    whereId,
     whoId: who.card.id,
-    howId,
+    howId: howCard?.id ?? null,
     twistId,
     twistShown: false,
+    ...cast,
+    landingCalled: false,
     phase: 'brief',
-    clock: clock.createClock(sceneMs(next)),
-    line: 0,
+    clock: clock.createClock(next.settings.sceneSeconds * 1000),
   };
   return { ...next, round };
+}
+
+/** The first scene has no How; easy Hows only until a couple of How scenes are banked. */
+function dealHow(trip: Trip, sceneNumber: number): Drawn | null {
+  if (!trip.settings.useHow || sceneNumber === 1) return null;
+  const easyOnly = howScenesBanked(trip) < EASY_HOW_SCENES;
+  return draw(trip, 'how', { allow: (card) => !easyOnly || card.level === 'easy' });
 }
 
 const SWAP_FIELD = { where: 'whereId', who: 'whoId', how: 'howId', twist: 'twistId' } as const;
@@ -151,20 +246,60 @@ export type SwappableSuit = keyof typeof SWAP_FIELD;
 export function swap(trip: Trip, suit: SwappableSuit): Trip {
   const round = trip.round;
   if (round?.kind !== 'scene' || round.phase !== 'brief') return trip;
+  if (suit === 'where' && round.arrival) return trip;
   const field = SWAP_FIELD[suit];
   const current = round[field];
   if (current === null) return trip;
-  const drawn = draw(trip, suit, [current]);
+  const level = cardById(current)?.level;
+  // A swapped How keeps the hand's difficulty, so staging and the twist rule still hold.
+  const allow = suit === 'how' && level === 'easy' ? (card: Card) => card.level === 'easy' : undefined;
+  const drawn = draw(trip, suit, { avoid: [current], ...(allow && { allow }) });
   if (!drawn) return trip;
   return { ...drawn.trip, round: { ...round, [field]: drawn.card.id } };
 }
 
+// ---------------------------------------------------------------- warm-ups
+
+export function startWarmup(trip: Trip, cardId?: string): Trip {
+  let next = trip;
+  let card = cardById(cardId);
+  if (card?.suit !== 'warmup') {
+    const drawn = draw(trip, 'warmup', { avoid: trip.round?.kind === 'warmup' ? [trip.round.cardId] : [] });
+    if (!drawn) return { ...trip, round: null };
+    card = drawn.card;
+    next = drawn.trip;
+  }
+  const config = card.warmup;
+  if (!config) return trip;
+  let seed: string | null = null;
+  if (config.seeds) {
+    const [index, rngState] = pickIndex(next.rngState, config.seeds.length);
+    seed = config.seeds[index] ?? null;
+    next = { ...next, rngState };
+  }
+  const round: WarmupRound = {
+    kind: 'warmup',
+    cardId: card.id,
+    seed,
+    phase: 'brief',
+    clock: clock.createClock(config.seconds * 1000),
+    turn: 0,
+    pass: 0,
+  };
+  return { ...next, round };
+}
+
+/** A warm-up can stand in for any scene except the Arrival. */
+export function canWarmUpInstead(trip: Trip): boolean {
+  const round = trip.round;
+  return round?.kind === 'scene' && round.phase === 'brief' && !round.arrival;
+}
+
+// ---------------------------------------------------------------- the clock
+
 export function startRound(trip: Trip, now: number): Trip {
   const round = trip.round;
-  if (!round || round.phase !== 'brief') return trip;
-  if (round.kind === 'scene') {
-    return { ...trip, round: { ...round, phase: 'live', clock: clock.start(round.clock, now) } };
-  }
+  if (round?.phase !== 'brief') return trip;
   return { ...trip, round: { ...round, phase: 'live', clock: clock.start(round.clock, now) } };
 }
 
@@ -192,23 +327,30 @@ export function isPaused(round: Round): boolean {
 export function tick(trip: Trip, now: number): { trip: Trip; events: TripEvent[] } {
   const round = trip.round;
   if (round?.phase !== 'live' || !clock.isRunning(round.clock)) return { trip, events: [] };
+  return round.kind === 'scene' ? tickScene(trip, round, now) : tickWarmup(trip, round, now);
+}
+
+function tickScene(trip: Trip, round: SceneRound, now: number): { trip: Trip; events: TripEvent[] } {
   const events: TripEvent[] = [];
-
-  if (round.kind === 'scene') {
-    let next: SceneRound = round;
-    const half = round.clock.durationMs / 2;
-    if (round.twistId && !round.twistShown && clock.elapsed(round.clock, now) >= half) {
-      next = { ...next, twistShown: true };
-      events.push('twist');
-    }
-    if (clock.isExpired(round.clock, now)) {
-      next = { ...next, phase: 'button', clock: clock.stop(next.clock, now) };
-      events.push('time-up');
-    }
-    return { trip: next === round ? trip : { ...trip, round: next }, events };
+  let next = round;
+  const elapsed = clock.elapsed(round.clock, now);
+  if (round.twistId && !round.twistShown && elapsed >= round.clock.durationMs * TWIST_AT) {
+    next = { ...next, twistShown: true };
+    events.push('twist');
   }
+  if (!round.landingCalled && clock.remaining(round.clock, now) <= LANDING_MS) {
+    next = { ...next, landingCalled: true };
+    events.push('landing');
+  }
+  if (clock.isExpired(round.clock, now)) {
+    next = { ...next, phase: 'button', clock: clock.stop(next.clock, now) };
+    events.push('time-up');
+  }
+  return { trip: next === round ? trip : { ...trip, round: next }, events };
+}
 
-  if (!clock.isExpired(round.clock, now)) return { trip, events };
+function tickWarmup(trip: Trip, round: WarmupRound, now: number): { trip: Trip; events: TripEvent[] } {
+  if (!clock.isExpired(round.clock, now)) return { trip, events: [] };
   const card = cardById(round.cardId);
   const nextPass = round.pass + 1;
   const factor = HALF_LIFE[nextPass];
@@ -226,35 +368,34 @@ export function tick(trip: Trip, now: number): { trip: Trip; events: TripEvent[]
   return { trip: { ...trip, round: done }, events: ['warmup-done'] };
 }
 
-/** Ends the scene early: whoever has the turn says the button line. */
+/** Ends the scene now: the Opener says the last line. */
 export function land(trip: Trip, now: number): Trip {
   const round = trip.round;
   if (round?.kind !== 'scene' || round.phase !== 'live') return trip;
-  return { ...trip, round: { ...round, phase: 'button', clock: clock.stop(round.clock, now) } };
+  return { ...trip, round: { ...round, phase: 'button', landingCalled: true, clock: clock.stop(round.clock, now) } };
 }
 
-/** With called turns, moves the spotlight to the next player. */
-export function nextLine(trip: Trip): Trip {
+/** The Director (or the phone-holder) throws the twist before it is due. */
+export function throwTwist(trip: Trip): Trip {
   const round = trip.round;
-  if (!round || round.phase !== 'live') return trip;
-  if (round.kind === 'scene') return { ...trip, round: { ...round, line: round.line + 1 } };
+  if (round?.kind !== 'scene' || round.phase !== 'live' || !round.twistId || round.twistShown) return trip;
+  return { ...trip, round: { ...round, twistShown: true } };
+}
+
+/** Warm-ups with turn cues: moves to the next player's cue. */
+export function nextTurn(trip: Trip): Trip {
+  const round = trip.round;
+  if (round?.kind !== 'warmup' || round.phase !== 'live') return trip;
   return { ...trip, round: { ...round, turn: round.turn + 1 } };
 }
 
-export function speakerIndex(trip: Trip): number {
-  const count = Math.max(trip.players.length, 1);
+export function turnPlayerIndex(trip: Trip): number {
   const round = trip.round;
-  const offset = round?.kind === 'scene' ? round.line : round?.kind === 'warmup' ? round.turn : 0;
-  return (trip.opener + offset) % count;
+  const turn = round?.kind === 'warmup' ? round.turn : 0;
+  return turn % Math.max(trip.players.length, 1);
 }
 
-function logEntry(trip: Trip, now: number, entry: Omit<LogEntry, 'id' | 'at'>): LogEntry {
-  return { id: `${trip.id}-${trip.log.length + 1}`, at: now, ...entry };
-}
-
-function titles(ids: readonly (string | null)[]): string {
-  return ids.map((id) => cardById(id)?.title).filter(Boolean).join(' · ');
-}
+// ---------------------------------------------------------------- banking
 
 export function canBank(round: Round | null): boolean {
   if (!round) return false;
@@ -262,68 +403,56 @@ export function canBank(round: Round | null): boolean {
   return round.phase === 'live' || round.phase === 'done' || round.pass > 0;
 }
 
-/** Banks a mile for the group, moves the opener on, and deals the next scene straight away. */
-export function bank(trip: Trip, now: number, note = ''): Trip {
+function entryFor(trip: Trip, round: Round, now: number, souvenir: Souvenir | null): LogEntry {
+  const base = { id: `${trip.id}-${trip.log.length + 1}`, at: now };
+  if (round.kind === 'warmup') {
+    return { ...base, kind: 'warmup', title: cardById(round.cardId)?.title ?? 'A warm-up', cardIds: [round.cardId], castIds: [], souvenir: null };
+  }
+  const cardIds = [round.whereId, round.whoId, round.howId, round.twistShown ? round.twistId : null].filter(
+    (id): id is string => id !== null,
+  );
+  return {
+    ...base,
+    kind: round.arrival ? 'arrival' : 'scene',
+    title: cardById(round.whereId)?.title ?? 'A scene',
+    cardIds,
+    castIds: [round.openerId, round.partnerId],
+    souvenir,
+  };
+}
+
+/**
+ * Banks the stop: a mile for the group, the cast recorded so roles rotate, an optional souvenir kept for the
+ * Arrival. Then deals the next stop, or finishes the trip if this was the Arrival.
+ */
+export function bank(trip: Trip, now: number, souvenirText = ''): Trip {
   const round = trip.round;
   if (!round || !canBank(round)) return trip;
-  const entry =
-    round.kind === 'scene'
-      ? logEntry(trip, now, {
-          kind: 'scene',
-          title: cardById(round.whereId)?.title ?? 'A scene',
-          detail: titles([round.whoId, round.howId, round.twistShown ? round.twistId : null]),
-          note: note.trim(),
-        })
-      : logEntry(trip, now, {
-          kind: 'warmup',
-          title: cardById(round.cardId)?.title ?? 'A warm-up',
-          detail: round.seed ?? '',
-          note: note.trim(),
-        });
-  const banked: Trip = {
-    ...trip,
-    miles: trip.miles + 1,
-    log: [entry, ...trip.log],
-    opener: (trip.opener + 1) % Math.max(trip.players.length, 1),
-  };
-  return dealScene(banked);
+  const text = souvenirText.trim().slice(0, 60);
+  const souvenir = round.kind === 'scene' && !round.arrival && text ? { text, from: cardById(round.whereId)?.title ?? '' } : null;
+  const entry = entryFor(trip, round, now, souvenir);
+  const banked: Trip = { ...trip, miles: trip.miles + 1, log: [entry, ...trip.log] };
+  if (round.kind === 'scene' && round.arrival) return { ...banked, round: null, finishedAt: now };
+  return dealNext(banked);
 }
 
-/** Drops the current round with no mile and deals a fresh scene. The opener keeps their turn. */
-export function scrap(trip: Trip): Trip {
-  return dealScene({ ...trip, round: null });
+/** Open-road trips end when the family chooses: the next stop becomes the Arrival. */
+export function headForDestination(trip: Trip): Trip {
+  const round = trip.round;
+  if (round && round.phase !== 'brief') return trip;
+  if (round?.kind === 'scene' && round.arrival) return trip;
+  return dealArrival(trip);
 }
 
-export function startWarmup(trip: Trip, cardId?: string): Trip {
-  let next = trip;
-  let card = cardById(cardId);
-  if (!card || card.suit !== 'warmup') {
-    const drawn = draw(trip, 'warmup');
-    if (!drawn) return trip;
-    card = drawn.card;
-    next = drawn.trip;
-  }
-  const config = card.warmup;
-  if (!config) return trip;
-  let seed: string | null = null;
-  if (config.seeds) {
-    const [index, rngState] = pickIndex(next.rngState, config.seeds.length);
-    seed = config.seeds[index] ?? null;
-    next = { ...next, rngState };
-  }
-  const round: WarmupRound = {
-    kind: 'warmup',
-    cardId: card.id,
-    seed,
-    phase: 'brief',
-    clock: clock.createClock(config.seconds * 1000),
-    turn: 0,
-    pass: 0,
-  };
-  return { ...next, round };
+/** After the postcard, the trip can carry on as an open road. */
+export function keepDriving(trip: Trip): Trip {
+  if (trip.finishedAt === null) return trip;
+  return dealScene({ ...trip, finishedAt: null, settings: { ...trip.settings, length: 'open' } });
 }
 
-/** Changes that alter what a hand contains are re-dealt if no scene is under way yet. */
+// ---------------------------------------------------------------- settings
+
+/** Changes that alter what a hand contains are re-dealt if the stop hasn't started yet. */
 export function updateSettings(trip: Trip, settings: Settings): Trip {
   const next = { ...trip, settings };
   const before = trip.settings;
@@ -331,50 +460,28 @@ export function updateSettings(trip: Trip, settings: Settings): Trip {
     JSON.stringify(before.filters) !== JSON.stringify(settings.filters) ||
     before.useHow !== settings.useHow ||
     before.useTwists !== settings.useTwists ||
+    before.director !== settings.director ||
     before.sceneSeconds !== settings.sceneSeconds;
   const round = trip.round;
-  const idle = !round || (round.kind === 'scene' && round.phase === 'brief');
-  return changesHand && idle ? dealScene(next) : next;
+  if (!changesHand || round?.phase !== 'brief' || round.kind !== 'scene') return next;
+  return round.arrival ? dealArrival(next) : dealScene(next);
+}
+
+export function setDriver(trip: Trip, driverId: string | null): Trip {
+  if (driverId !== null && !trip.players.some((player) => player.id === driverId)) return trip;
+  const next = { ...trip, driverId };
+  const round = trip.round;
+  const castClash =
+    round?.kind === 'scene' && round.phase === 'brief' && (round.openerId === driverId || round.directorId === driverId);
+  return castClash ? (round.arrival ? dealArrival(next) : dealScene(next)) : next;
 }
 
 export function renamePlayer(trip: Trip, playerId: string, name: string): Trip {
   const clean = name.trim().slice(0, 24);
   if (!clean) return trip;
-  return {
-    ...trip,
-    players: trip.players.map((player) => (player.id === playerId ? { ...player, name: clean } : player)),
-  };
+  return { ...trip, players: trip.players.map((player) => (player.id === playerId ? { ...player, name: clean } : player)) };
 }
 
-/** The rule as a standing reminder, for when lines flow freely and nobody is counting them. */
-export function ruleReminder(cue: Cue | undefined): string | null {
-  switch (cue) {
-    case 'fortunately':
-      return 'Fortunately… Unfortunately…';
-    case 'alphabet':
-      return 'A, then B, then C…';
-    default:
-      return lineCue(cue, 0);
-  }
-}
-
-export function lineCue(cue: Cue | undefined, line: number): string | null {
-  switch (cue) {
-    case 'yes-and':
-      return 'Start with “Yes, and…”';
-    case 'questions':
-      return 'Only questions.';
-    case 'fortunately':
-      return line % 2 === 0 ? 'Fortunately…' : 'Unfortunately…';
-    case 'alphabet':
-      return `Start with ${String.fromCharCode(65 + (line % 26))}.`;
-    case 'three-words':
-      return 'Exactly three words.';
-    case 'last-word':
-      return 'Start with their last word.';
-    case 'no-i':
-      return 'No I, me or my.';
-    case undefined:
-      return null;
-  }
+export function playerName(trip: Trip, id: string | null): string {
+  return trip.players.find((player) => player.id === id)?.name ?? 'Someone';
 }

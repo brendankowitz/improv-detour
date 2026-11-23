@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { IonIcon } from '@ionic/react';
+import { refreshOutline } from 'ionicons/icons';
 import type { Card, Suit } from '@game/types';
 
 export const SUIT_LABEL: Record<Suit, string> = {
@@ -7,16 +8,15 @@ export const SUIT_LABEL: Record<Suit, string> = {
   how: 'How',
   twist: 'Twist',
   warmup: 'Warm-up',
+  destination: 'Destination',
 };
 
-function traits(card: Card): string[] {
+function marks(card: Card): string[] {
   const list: string[] = [];
-  if (card.volume === 'quiet') list.push('Quiet');
-  if (card.volume === 'loud') list.push('Loud');
-  if (!card.handsFree) list.push('Needs hands');
-  if (!card.seated) list.push('Up and moving');
+  if (!card.voiceOnly) list.push('Needs eyes');
+  if (!card.quiet) list.push('Loud');
+  if (card.physical) list.push('Moving');
   if (card.level === 'stretch') list.push('Stretch');
-  if (card.minPlayers > 2) list.push(`${card.minPlayers}+ players`);
   return list;
 }
 
@@ -24,14 +24,16 @@ interface SignCardProps {
   readonly card: Card;
   readonly compact?: boolean;
   readonly showTip?: boolean;
-  readonly showTraits?: boolean;
-  readonly action?: ReactNode;
+  readonly showMarks?: boolean;
+  /** Replaces the suit label, e.g. "Who · Ana". */
+  readonly label?: string;
+  readonly onSwap?: () => void;
   readonly className?: string;
 }
 
-/** A card drawn as a road sign: suit colour, inset border stripe, short bold title. */
-export function SignCard({ card, compact = false, showTip = true, showTraits = false, action, className }: SignCardProps) {
-  const marks = showTraits ? traits(card) : [];
+/** A card drawn as a road sign: suit colour, inset border stripe, highway lettering. */
+export function SignCard({ card, compact = false, showTip = true, showMarks = false, label, onSwap, className }: SignCardProps) {
+  const traits = showMarks ? marks(card) : [];
   return (
     <article
       className={['sign', compact ? 'sign-compact' : '', className ?? ''].join(' ').trim()}
@@ -40,16 +42,22 @@ export function SignCard({ card, compact = false, showTip = true, showTraits = f
     >
       <div className="sign-inner">
         <div className="sign-head">
-          <span className="sign-suit">{SUIT_LABEL[card.suit]}</span>
-          {action}
+          <span className="sign-suit">{label ?? SUIT_LABEL[card.suit]}</span>
+          {onSwap && (
+            <button type="button" className="sign-swap" aria-label={`Swap the ${card.suit} card`} onClick={onSwap}>
+              <IonIcon icon={refreshOutline} aria-hidden="true" />
+            </button>
+          )}
         </div>
         <h3 className="sign-title">{card.title}</h3>
         <p className="sign-prompt">{card.prompt}</p>
         {showTip && card.tip && <p className="sign-tip">{card.tip}</p>}
-        {marks.length > 0 && (
+        {traits.length > 0 && (
           <p className="sign-foot">
-            {marks.map((mark) => (
-              <span key={mark}>{mark}</span>
+            {traits.map((trait) => (
+              <span key={trait} className="sign-mark">
+                {trait}
+              </span>
             ))}
           </p>
         )}
