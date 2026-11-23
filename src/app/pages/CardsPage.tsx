@@ -34,7 +34,7 @@ export function CardsPage() {
       </IonHeader>
       <IonContent fullscreen color="light">
         <p className="section-note" style={{ paddingTop: 12 }}>
-          {cards.length} {cards.length === 1 ? 'card' : 'cards'}. The colour tells you a card’s job, the way road signs
+          {cards.length} {cards.length === 1 ? 'card' : 'cards'}. The color tells you a card’s job, the way road signs
           do.
         </p>
         <div className="deck-grid">

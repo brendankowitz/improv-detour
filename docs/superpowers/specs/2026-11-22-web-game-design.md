@@ -82,7 +82,7 @@ A trip has a **length**: Short (4 stops), Standard (6 stops) or Open road (no en
    else is **on deck**: at any moment they may walk on as a new character (one line saying who they are), or say
    "tag" and take over a role. Casting rotates: nobody sits out more than two scenes running, the Opener role is
    shared evenly, and partnerships vary. The Driver is never the Opener.
-3. **Partner's first line says who they are to the Opener** ("Mum, the bus is leaving!").
+3. **Partner's first line says who they are to the Opener** ("Mom, the bus is leaving!").
 4. **The want holds.** Nobody grants the Opener's want before the last line. Make it harder, stranger or more expensive
    instead.
 5. **Landing.** A soft chime sounds 10 s before time. The Opener's next line is the last one: they get or lose the want
