@@ -1,131 +1,149 @@
-# Detour: web game design (v1)
+# Detour: web game design (v2)
 
 Working title **Detour** ("yes, and the long way"). This is project 1 of 3. The order is: (1) a polished, playable
-web game; (2) a printable deck that plays well on its own; (3) a spec for a native iOS single-player mode
-with speech. This document covers (1) and the card schema that (2) will share.
+web game; (2) a printable deck that plays well on its own; (3) a spec for a native iOS single-player mode with
+speech. This document covers (1) and the card schema that (2) will share.
 
-Source material: `docs/sources/detour-grok.md` (Detour: the loop and voice), `docs/sources/scene-snacks-claude.md` (Scene Snacks: traits,
-safety tools, research), `docs/sources/yes-and-away-gemini.html` (Gemini: session arc,
-Half-Life). Where this doc conflicts with them, this doc wins.
+v2 folds in two independent rules reviews (Fable and Opus), each with simulated playthroughs at a restaurant table
+and in a car, and the owner's decisions on the points where they split. Source material is in `docs/sources/`.
 
 ## Intent
 
-A fast, cooperative improv game a family plays out loud with one phone, wherever they happen to be. It should
-be genuinely fun first and quietly teach real improv habits: listening, accepting, building, specificity and
-commitment. Quality matters more than breadth.
+A fast, cooperative improv game a family plays out loud with one phone, wherever they are. It should be genuinely
+fun first and quietly teach real improv habits: listening, accepting, building, specificity, commitment and
+callbacks. Quality matters more than breadth.
 
 ## Who
 
-- A family of 4, all aged **10+**. One of the kids is a teen. Plays with 2–6 people.
+- A family of 4, all aged **10+**, one of them a teen. Plays with 2–6 people.
 - One phone, held by whoever is free. Everyone else plays by voice.
 - No accounts, no network once loaded, nothing collected.
 
-## Fit the space: trait filters, not modes
+## Fit the space: card traits and presets
 
-Every card declares plain traits. The player switches on the filters that fit where they are, and only cards
-that pass every active filter are dealt.
+Every card declares three plain traits:
 
-| Card trait | Values | Filter that uses it |
-|---|---|---|
-| `volume` | `quiet` / `normal` / `loud` | **Quiet** keeps only `quiet` (and `normal` when set to "low") |
-| `handsFree` | bool: playable by someone who can't use eyes or hands | **Hands-free** (a driver, someone holding a baby) |
-| `seated` | bool: playable without standing or moving around | **Seated** |
-| `minPlayers` | 2–4 | the player count |
+| Trait | Meaning |
+|---|---|
+| `voiceOnly` | Playable entirely by ear. Nobody needs to see, point, mime, hold, read or look at anyone. |
+| `quiet` | Works at an indoor-table voice. |
+| `physical` | Needs someone to stand or move. Rare. |
 
-**Shortcuts** (one tap each, then editable): Car = Seated + Hands-free; Plane/Train = Seated + Quiet;
-Table = Seated + Quiet; Home = nothing. Shortcuts are just presets of the filters.
+Filters: **Voice only**, **Quiet**, **Moving allowed** (physical cards are excluded unless this is on), and **Stretch**
+(include harder cards). Presets are one-tap starting points: **Car** = Voice only (and asks who is driving);
+**Out and about** = Quiet; **Home** = Moving allowed. The traits apply to every suit, Twists and Warm-ups included.
 
-Paper parity: the same traits print as small icons on each card.
+## The driver is a seat, not a filter
 
-## The deck (target 108 cards)
+In setup, any player can be marked **Driver**. The Driver is never cast as Opener and never lands a scene. They may be
+cast as Partner, and may say "driving" at any time to drop out; the nearest on-deck player takes over the role with no
+gap. The driver never holds the phone.
+
+## The deck (108 cards)
 
 | Suit | Count | Job |
 |---|---|---|
-| **Where** | 24 | A place you can stand in. Ordinary-strange. No plot and no character baked in. |
-| **Who** | 24 | The opener's character **plus a want** ("…who needs one more vote"). Character and objective on one card. |
-| **How** | 24 | The rule for the scene: a real workshop constraint (yes-and, last word first, questions only, three words, genre…). |
-| **Twist** | 12 | A mid-scene change, fired once at about the halfway point. |
-| **Warm-up** | 18 | A stand-alone game of at most 2 minutes (one-word story, fortunately/unfortunately, Half-Life, expert…). |
-| **Reference** | 6 | Rules, safety tools and the trait-icon key (print only). |
+| **Where** | 26 | A place you can stand in, with one sensory hook. Ordinary-strange. No plot, no character baked in. |
+| **Who** | 30 | The Opener's character **and a want aimed at the Partner** ("…who needs *you* to sign the permission slip"). |
+| **How** | 16 | The rule for the scene, as a ladder: 8 easy, 8 stretch. Holdable in your head after hearing it once. |
+| **Twist** | 12 | Adds a fact to the world ("it starts raining indoors"). Never adds a second speaking rule. |
+| **Warm-up** | 12 | A stand-alone game of at most 2 minutes, with 6+ seeds each so formats are replayed, not exhausted. |
+| **Destination** | 6 | Where the trip is going; the setting of the final Arrival scene. |
+| **Reference** | 6 | Rules, casting, safety, the trait-icon key (print only). |
 
-Card fields: `id` (stable, e.g. `W-01`), `suit`, `title` (≤ 24 chars), `prompt` (≤ 16 words, readable in one
-breath), `tip` (optional, ≤ 14 words, shown on request and not read aloud), `skill` (one of a fixed set of 8:
-listening, accepting, building, specificity, emotion, status, character, storytelling), `level`
-(`easy` / `stretch`), traits above, and optional machine fields (`cue` for How cards whose per-line prompt
-the app can show, `warmup` config for warm-ups). Content lives in one JSON file, validated by tests.
+Card fields: `id` (stable; `W-`, `C-`, `H-`, `T-`, `U-`, `D-` + two digits), `suit`, `title` (≤ 24 chars), `prompt`
+(≤ 14 words; Who ≤ 16), `tip` (optional, ≤ 12 words, shown on request, never read aloud), `skill` (one of 8),
+`level` (`easy` / `stretch`), the three traits, optional `cue` (a static reminder phrase for How cards), optional
+`warmup` config. Content lives in `src/content/cards.json` and is validated by tests, including a guarantee that the
+Car and Out-and-about presets each leave at least 12 How, 8 Twist and 8 Warm-up cards and every Where, Who and
+Destination.
 
-Level replaces "spice". Everyone is 10+, so there is no age tier. `stretch` means harder and drier (status,
-subtext, Half-Life), not stranger.
+Content rules: Who prompts are noun phrases ("A tour guide who…") so they can be read as "Ana, you're a tour guide
+who…". Every want is something the Partner can give, refuse or complicate within ten seconds. Tone is dry, not cute.
 
-## A round: two minutes at most
+## A trip
 
-1. **Deal and read (≈15 s).** Where + Who + How (How can be switched off). The app reads the three prompts
-   aloud once (TTS can be toggled). One-tap swap of any card, no confirmation.
-2. **Scene (45 / 60 / 90 s, default 60).** The opener speaks first, in character. Lines go round the group in
-   seating order. **No tap per line.** The phone shows the timer, the opener and, when the How has one, the
-   per-line cue. An optional "call the turns" setting brings back a Pass button that names the next player.
-3. **Twist.** In about one in three scenes, the app announces a Twist card at about the halfway point
-   (chime + voice). Players accept it immediately.
-4. **Button (≈10 s).** When time runs out (or someone taps **Land it**), a chime sounds and whoever has the turn
-   says one last line that ends the scene.
-5. **Bank (≈5 s).** One tap banks a mile, and the next hand deals straight away. Shout-outs and a one-line journal
-   note are optional and skipped by default.
+A trip has a **length**: Short (4 stops), Standard (6 stops) or Open road (no end until you choose to arrive).
 
-Warm-ups are an alternative to a scene at any point: same two-minute cap, same one-tap bank.
+1. **Deal the destination** ("the World's Largest Spoon"). Read aloud at the start.
+2. **Stop 1 is a warm-up.**
+3. **Middle stops are scenes.** A warm-up can replace any scene.
+4. **After each scene, keep a souvenir** (optional): tap one card, or type a few words ("grandma pie lady").
+5. **The last stop is the Arrival:** a scene set at the destination, in which the Opener must bring back one souvenir.
+   Open road trips get an "Head for the destination" button instead.
+6. **Postcard:** the destination, the cast and the souvenirs. Every completed stop counts as a mile toward a lifetime
+   total, but the trip ends on the postcard, not on a number.
 
-## Scoring and session
+## A scene: two cast, the rest on deck
 
-- Cooperative. Each completed scene or warm-up is one mile for the group. Nothing is ever lost, and nobody is
-  ranked or singled out.
-- A session is open-ended: any number of rounds, stopping anywhere, resuming later. **End trip** shows a short
-  summary (miles, the scenes played, any journal lines).
-- *Open question for reviewers:* does the session need a stronger arc (a destination, a warm-up → scenes →
-  closer shape) to feel like it went somewhere?
+1. **Deal and read (≈20 s).** Where, then How (if any), then Who last, addressed by name: "Ana, you're a tour guide who
+   needs you to…". One tap to hear it again. Any card can be swapped before the scene starts.
+2. **Cast.** The app names the **Opener** (gets the Who) and the **Partner**. They alternate lines; no taps. Everyone
+   else is **on deck**: at any moment they may walk on as a new character (one line saying who they are), or say
+   "tag" and take over a role. Casting rotates: nobody sits out more than two scenes running, the Opener role is
+   shared evenly, and partnerships vary. The Driver is never the Opener.
+3. **Partner's first line says who they are to the Opener** ("Mum, the bus is leaving!").
+4. **The want holds.** Nobody grants the Opener's want before the last line. Make it harder, stranger or more expensive
+   instead.
+5. **Landing.** A soft chime sounds 10 s before time. The Opener's next line is the last one: they get or lose the want
+   in one sentence. Then everyone says "Scene!" together.
+6. **Bank.** One tap. A scene that has started always banks; there is no scrap.
 
-## Safety and inclusion (printed on a reference card too)
+Scene lengths: 45 / 60 / 75 seconds, default 60.
 
-- **Pass is free.** Anyone can pass a line with no explanation.
-- **Rewind.** Anyone can say "rewind" to undo a line that felt unkind; the speaker makes a new choice.
-- **Swap / scrap.** Any card can be swapped before the scene. A scene can be scrapped with no mile and no fuss.
+### How staging
+
+The first scene of every trip has no How. After that, only `easy` How cards are dealt until two scenes with a How
+have been banked; then `stretch` Hows join if the Stretch filter is on.
+
+### Twists
+
+From the second scene on, every other scene carries a Twist, and never alongside a `stretch` How. The deal announces it
+("a twist is coming"). It fires at 60% of the scene: chime, a one-second gap, then the voice reads only its title and
+prompt. With the Director on, the Director can throw it earlier.
+
+### Director (optional, off by default)
+
+One on-deck player per scene (never the Driver; rotates) may swap one card before the scene, throw the Twist when they
+choose, and call "Scene!" early. It exists to give a teen ownership.
+
+## Safety and inclusion
+
+- **Tag, don't freeze.** In a scene, say "tag" and someone takes over your role. "Pass" belongs to warm-ups.
+- **Rewind.** Anyone can say "rewind" to redo a line, any line, including their own, for any reason. No explanation.
 - Conflict stays sideways: blame the weather, the soup or the map, never each other. No romance, scares or
   humiliation. Real people present are never the joke.
-- Hands-free safety: a card marked `handsFree` must never ask anyone to look, point, mime or hold anything.
+- `voiceOnly` cards must never ask anyone to look, point, mime or hold anything.
 
 ## The app
 
-- **Screens:** Home (start or continue), Setup (names, filters, length, How on/off, voice on/off), Play (deal →
-  scene → button → bank), Warm-up, Deck (browse every card with filters), Rules, Trips (journal).
-- **Phone-down play:** large type, a dark screen, one primary action. Screen Wake Lock while a trip is open.
-  Space bar = primary action on a keyboard.
-- **Voice:** `speechSynthesis` behind a small speech interface, so a native Capacitor implementation can drop in
-  later.
-- **Offline:** a service worker caches the whole app. Fully playable in airplane mode after the first load.
-- **Persistence:** localStorage, versioned with explicit migrations. Unknown card IDs in a saved trip are
-  dropped gracefully, never a blank screen.
-- **Determinism:** the game engine is pure TypeScript with a seeded RNG and no browser globals, enforced by
-  lint as in the reference repo. The UI drives it.
+- **Screens:** Play (setup → trip → postcard), Cards, Rules, Trips.
+- **Phone-down play:** large type, dark screen, one primary action. Screen Wake Lock during a trip. Space bar = primary
+  action.
+- **Voice:** `speechSynthesis` behind a `Voice` interface, so a Capacitor implementation can drop in later. The voice
+  never talks over a player: chime first, then a short gap.
+- **Offline:** service worker. **Persistence:** localStorage, versioned; old saves that can't be migrated are dropped
+  with a console note, never a crash.
+- **Determinism:** pure, seeded engine in `src/game`, lint-enforced.
 
-## Stack and delivery (mirrors brendankowitz/towerdefense-body-game)
+## Stack and delivery
 
-Ionic React 8 (iOS mode) + React 19 + react-router 5, Vite, strict TypeScript, ESLint strictTypeChecked,
-Vitest + Testing Library, Playwright e2e on a phone viewport against the production build, an `npm run verify`
-gate, a GitHub Actions CI workflow, and a Pages deploy workflow with a 404.html SPA fallback. Capacitor is
-added in project 3, not now.
+Mirrors brendankowitz/towerdefense-body-game: Ionic React (iOS mode), React 19, react-router 5, Vite, strict
+TypeScript, ESLint strictTypeChecked, Vitest, Playwright on a phone viewport, `npm run verify`, CI and a GitHub Pages
+deploy workflow.
 
 ## Quality process
 
-- Rules and gameplay: Fable and Opus each review this doc independently. Disagreements go to the owner.
-- Content: once the cards are written, Fable and Opus each review every card for quality, fit, traits and
-  hands-free safety.
-- A written simulated playthrough of a four-person session in the car is used to catch rules that break in
-  practice.
+- Rules: Fable and Opus review independently; disagreements go to the owner (done for v2).
+- Content: a writer drafts the deck; Fable and Opus each review every card for quality, fit, traits and voice-only
+  safety; findings are merged and disagreements go to the owner.
 
-## Non-goals (v1)
+## Later (not v1)
 
-Print pipeline (project 2). Native iOS, speech recognition, AI scene partner (project 3). Accounts, sync,
-multiplayer across phones, analytics. Competitive scoring.
+"Run it back" (replay the scene just played in 30 then 15 seconds), print pipeline (project 2), native iOS speech
+(project 3).
 
 ## Anti-goals
 
-A quiz or a chatbot that writes scenes for you. Anything that requires the driver to look at the screen. Rounds
-that drag past two minutes. Copy that is cute instead of clear.
+A quiz or a chatbot that writes scenes for you. Anything that makes the driver look at the screen. Rounds that drag
+past two minutes. Copy that is cute instead of clear. The phone-holder turned into a clerk.

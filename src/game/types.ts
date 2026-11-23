@@ -1,4 +1,4 @@
-export const SUITS = ['where', 'who', 'how', 'twist', 'warmup'] as const;
+export const SUITS = ['where', 'who', 'how', 'twist', 'warmup', 'destination'] as const;
 export type Suit = (typeof SUITS)[number];
 
 export const SKILLS = [
@@ -13,11 +13,7 @@ export const SKILLS = [
 ] as const;
 export type Skill = (typeof SKILLS)[number];
 
-export type Volume = 'quiet' | 'normal' | 'loud';
 export type Level = 'easy' | 'stretch';
-
-/** A How card whose rule the app can prompt for on every line. */
-export type Cue = 'yes-and' | 'questions' | 'fortunately' | 'alphabet' | 'three-words' | 'last-word' | 'no-i';
 
 export interface WarmupConfig {
   readonly seconds: number;
@@ -25,7 +21,7 @@ export interface WarmupConfig {
   readonly seeds?: readonly string[];
   /** Shown in rotation, one per turn, when the turn is advanced. */
   readonly turnCues?: readonly string[];
-  /** Replays the same story at shrinking lengths, e.g. 60 → 30 → 15 seconds. */
+  /** Replays the same story at shrinking lengths: full, half, quarter. */
   readonly halfLife?: boolean;
 }
 
@@ -37,36 +33,39 @@ export interface Card {
   readonly tip?: string;
   readonly skill: Skill;
   readonly level: Level;
-  readonly volume: Volume;
-  /** Playable by someone who can't use their eyes or hands, like a driver. */
-  readonly handsFree: boolean;
-  /** Playable without standing up or moving around. */
-  readonly seated: boolean;
-  readonly minPlayers: number;
-  readonly cue?: Cue;
+  /** Playable entirely by ear: nobody needs to see, point, mime, hold or read. */
+  readonly voiceOnly: boolean;
+  /** Works at an indoor-table voice. */
+  readonly quiet: boolean;
+  /** Needs someone to stand or move. */
+  readonly physical: boolean;
+  /** How cards: a short standing reminder shown during the scene. */
+  readonly cue?: string;
   readonly warmup?: WarmupConfig;
 }
 
 export interface Filters {
-  /** Leave out cards that get loud. */
+  /** Only cards playable entirely by ear. */
+  readonly voiceOnly: boolean;
+  /** Only cards that work at an indoor-table voice. */
   readonly quiet: boolean;
-  /** Only cards a voice-only player can join. */
-  readonly handsFree: boolean;
-  /** Only cards playable sitting down. */
-  readonly seated: boolean;
-  /** Include stretch cards as well as easy ones. */
+  /** Allow cards that need someone to stand or move. */
+  readonly moving: boolean;
+  /** Allow stretch cards as well as easy ones. */
   readonly stretch: boolean;
 }
 
-export type SceneSeconds = 45 | 60 | 90;
+export type SceneSeconds = 45 | 60 | 75;
+export type TripLength = 'short' | 'standard' | 'open';
 
 export interface Settings {
   readonly filters: Filters;
   readonly sceneSeconds: SceneSeconds;
+  readonly length: TripLength;
   readonly useHow: boolean;
   readonly useTwists: boolean;
-  /** The phone names each speaker and needs a tap per line. Off means lines flow freely. */
-  readonly callTurns: boolean;
+  /** One on-deck player per scene may swap a card, throw the twist and call the scene. */
+  readonly director: boolean;
   readonly voice: boolean;
 }
 
@@ -87,15 +86,21 @@ export type ScenePhase = 'brief' | 'live' | 'button';
 
 export interface SceneRound {
   readonly kind: 'scene';
+  /** The final scene of a trip, set at its destination. */
+  readonly arrival: boolean;
+  /** A Where card, or the trip's Destination card on arrival. */
   readonly whereId: string;
   readonly whoId: string;
   readonly howId: string | null;
   readonly twistId: string | null;
   readonly twistShown: boolean;
+  readonly openerId: string;
+  readonly partnerId: string;
+  readonly directorId: string | null;
+  /** Set once the ten-seconds-left chime has sounded. */
+  readonly landingCalled: boolean;
   readonly phase: ScenePhase;
   readonly clock: Clock;
-  /** Lines called so far; only meaningful with callTurns. */
-  readonly line: number;
 }
 
 export type WarmupPhase = 'brief' | 'live' | 'done';
@@ -113,13 +118,20 @@ export interface WarmupRound {
 
 export type Round = SceneRound | WarmupRound;
 
+export interface Souvenir {
+  readonly text: string;
+  /** The title of the scene it came from. */
+  readonly from: string;
+}
+
 export interface LogEntry {
   readonly id: string;
   readonly at: number;
-  readonly kind: 'scene' | 'warmup';
+  readonly kind: 'scene' | 'warmup' | 'arrival';
   readonly title: string;
-  readonly detail: string;
-  readonly note: string;
+  readonly cardIds: readonly string[];
+  readonly castIds: readonly string[];
+  readonly souvenir: Souvenir | null;
 }
 
 export interface Trip {
@@ -127,12 +139,16 @@ export interface Trip {
   readonly name: string;
   readonly createdAt: number;
   readonly players: readonly Player[];
+  /** Never cast as Opener, never lands a scene, never the Director. */
+  readonly driverId: string | null;
   readonly settings: Settings;
+  readonly destinationId: string;
   readonly miles: number;
+  /** Newest first. One entry per completed stop. */
   readonly log: readonly LogEntry[];
   readonly seen: Readonly<Record<Suit, readonly string[]>>;
-  /** Index of the player who opens the next scene. */
-  readonly opener: number;
   readonly rngState: number;
   readonly round: Round | null;
+  /** Set when the Arrival is banked; the trip then shows its postcard. */
+  readonly finishedAt: number | null;
 }

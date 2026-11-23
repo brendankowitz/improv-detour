@@ -1,9 +1,9 @@
 import { cardById } from '@game/cards';
-import { dealScene } from '@game/trip';
+import { dealNext } from '@game/trip';
 import type { Round, Trip } from '@game/types';
 
 export const STORAGE_KEY = 'detour.v1';
-export const STORAGE_VERSION = 1;
+export const STORAGE_VERSION = 2;
 export const MAX_TRIPS = 20;
 
 export interface Saved {
@@ -26,13 +26,20 @@ function roundCardsExist(round: Round): boolean {
  */
 export function repairTrip(trip: Trip): Trip {
   if (!trip.round || roundCardsExist(trip.round)) return trip;
-  return dealScene({ ...trip, round: null });
+  return dealNext({ ...trip, round: null });
 }
 
 function isTrip(value: unknown): value is Trip {
   if (typeof value !== 'object' || value === null) return false;
   const t = value as Partial<Trip>;
-  return typeof t.id === 'string' && Array.isArray(t.players) && t.players.length > 0 && typeof t.settings === 'object';
+  return (
+    typeof t.id === 'string' &&
+    Array.isArray(t.players) &&
+    t.players.length > 0 &&
+    Array.isArray(t.log) &&
+    typeof t.settings === 'object' &&
+    typeof t.destinationId === 'string'
+  );
 }
 
 /** Reads what is saved on this device. Anything unreadable starts fresh rather than crashing the app. */
@@ -47,7 +54,10 @@ export function load(storage: Pick<Storage, 'getItem'>): Saved {
     return EMPTY;
   }
   const saved = parsed as Partial<Saved>;
-  if (saved.version !== STORAGE_VERSION || !Array.isArray(saved.trips)) return EMPTY;
+  if (saved.version !== STORAGE_VERSION || !Array.isArray(saved.trips)) {
+    console.info(`Detour: saved trips are from an older version (${String(saved.version)}) and were not kept.`);
+    return EMPTY;
+  }
   const trips = saved.trips.filter(isTrip).map(repairTrip);
   const currentId = trips.some((trip) => trip.id === saved.currentId) ? (saved.currentId ?? null) : null;
   return { version: STORAGE_VERSION, trips, currentId };

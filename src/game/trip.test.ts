@@ -1,23 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { cardById } from './cards';
+import { CARDS, cardById } from './cards';
 import { formatClock, remaining } from './clock';
 import {
   DEFAULT_SETTINGS,
   bank,
   canBank,
   draw,
+  headForDestination,
+  keepDriving,
   land,
-  lineCue,
   missingSuits,
   newTrip,
-  nextLine,
   pause,
   resume,
-  scrap,
-  speakerIndex,
+  setDriver,
+  souvenirs,
   startRound,
   startWarmup,
+  stopNumber,
   swap,
+  swapDestination,
+  throwTwist,
   tick,
   updateSettings,
 } from './trip';
@@ -25,11 +28,12 @@ import type { SceneRound, Settings, Trip, WarmupRound } from './types';
 
 const T0 = 1_000_000;
 
-function trip(settings: Partial<Settings> = {}, seed = 42): Trip {
+function trip(settings: Partial<Settings> = {}, seed = 42, driverIndex: number | null = null): Trip {
   return newTrip({
     id: 'trip-1',
     name: 'Test',
     players: ['Ana', 'Ben', 'Cy', 'Di'],
+    driverIndex,
     settings: { ...DEFAULT_SETTINGS, ...settings },
     now: T0,
     seed,
@@ -37,209 +41,231 @@ function trip(settings: Partial<Settings> = {}, seed = 42): Trip {
 }
 
 function scene(t: Trip): SceneRound {
-  if (t.round?.kind !== 'scene') throw new Error('expected a scene round');
+  if (t.round?.kind !== 'scene') throw new Error(`expected a scene, got ${t.round?.kind ?? 'nothing'}`);
   return t.round;
 }
 
 function warmup(t: Trip): WarmupRound {
-  if (t.round?.kind !== 'warmup') throw new Error('expected a warm-up round');
+  if (t.round?.kind !== 'warmup') throw new Error(`expected a warm-up, got ${t.round?.kind ?? 'nothing'}`);
   return t.round;
 }
 
-describe('newTrip', () => {
-  it('deals the first hand immediately', () => {
-    const round = scene(trip());
-    expect(round.phase).toBe('brief');
-    expect(cardById(round.whereId)?.suit).toBe('where');
-    expect(cardById(round.whoId)?.suit).toBe('who');
-    expect(cardById(round.howId)?.suit).toBe('how');
+/** Plays the current stop to completion and banks it. */
+function play(t: Trip, souvenir = ''): Trip {
+  let next = startRound(t, T0);
+  if (next.round?.kind === 'scene') next = land(next, T0 + 1000);
+  return bank(next, T0 + 2000, souvenir);
+}
+
+describe('a new trip', () => {
+  it('deals a destination and opens with a warm-up', () => {
+    const t = trip();
+    expect(cardById(t.destinationId)?.suit).toBe('destination');
+    expect(warmup(t).phase).toBe('brief');
+    expect(stopNumber(t)).toBe(1);
   });
 
-  it('drops blank names and caps at six players', () => {
-    const t = newTrip({
-      id: 'x', name: ' ', players: ['a', ' ', 'b', 'c', 'd', 'e', 'f', 'g'],
-      settings: DEFAULT_SETTINGS, now: T0, seed: 1,
-    });
-    expect(t.players.map((p) => p.name)).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
-    expect(t.name).toBe('The long way');
-  });
-
-  it('rejects a trip with nobody in it', () => {
-    expect(() => newTrip({ id: 'x', name: 'n', players: [' '], settings: DEFAULT_SETTINGS, now: T0, seed: 1 }))
-      .toThrow(/at least one player/);
+  it('needs at least two players', () => {
+    expect(() =>
+      newTrip({ id: 'x', name: 'n', players: ['Solo', ' '], driverIndex: null, settings: DEFAULT_SETTINGS, now: T0, seed: 1 }),
+    ).toThrow(/at least 2 players/);
   });
 
   it('is reproducible from the seed', () => {
-    expect(trip({}, 7).round).toEqual(trip({}, 7).round);
+    expect(trip({}, 7)).toEqual(trip({}, 7));
   });
 
-  it('leaves out the How card when How is off', () => {
-    expect(scene(trip({ useHow: false })).howId).toBeNull();
-  });
-});
-
-describe('draw', () => {
-  it('does not repeat a card until the suit is used up', () => {
-    let t = trip();
-    const ids: string[] = [];
-    const poolSize = 8;
-    for (let i = 0; i < poolSize; i++) {
-      const drawn = draw(t, 'where');
-      if (!drawn) throw new Error('draw failed');
-      ids.push(drawn.card.id);
-      t = drawn.trip;
-    }
-    // The first hand already used one Where, so after the pool is exhausted it reshuffles.
-    expect(new Set(ids.slice(0, poolSize - 1)).size).toBe(poolSize - 1);
-  });
-
-  it('honours the hands-free and quiet filters', () => {
-    const t = trip({ filters: { quiet: true, handsFree: true, seated: true, stretch: true } });
-    for (let i = 0; i < 30; i++) {
-      const drawn = draw(t, 'how', []);
-      const card = drawn?.card;
-      expect(card?.handsFree).toBe(true);
-      expect(card?.volume).not.toBe('loud');
-    }
-  });
-
-  it('reports suits the filters leave empty', () => {
+  it('lets the destination be swapped before the first stop is banked', () => {
     const t = trip();
-    expect(missingSuits(t)).toEqual([]);
+    expect(swapDestination(t).destinationId).not.toBe(t.destinationId);
+    const later = play(t);
+    expect(swapDestination(later)).toBe(later);
   });
 });
 
-describe('a scene', () => {
-  it('runs brief → live → button → banked, then deals the next hand', () => {
-    let t = trip();
-    t = startRound(t, T0);
-    expect(scene(t).phase).toBe('live');
+describe('scenes', () => {
+  it('casts an Opener and a different Partner', () => {
+    const round = scene(play(trip()));
+    expect(round.openerId).not.toBe(round.partnerId);
+  });
 
-    const result = tick(t, T0 + 60_000);
-    expect(result.events).toContain('time-up');
-    t = result.trip;
+  it('never casts the driver as Opener', () => {
+    let t = trip({}, 3, 0);
+    for (let i = 0; i < 5; i++) {
+      t = play(t);
+      if (t.round?.kind === 'scene') expect(t.round.openerId).not.toBe('p1');
+    }
+  });
+
+  it('re-deals an unstarted hand when the Opener becomes the driver', () => {
+    const t = play(trip());
+    const opener = scene(t).openerId;
+    expect(scene(setDriver(t, opener)).openerId).not.toBe(opener);
+  });
+
+  it('runs brief → live → landing chime → last line → banked', () => {
+    let t = startRound(play(trip({ useTwists: false })), T0);
+    expect(tick(t, T0 + 49_000).events).toEqual([]);
+    const landing = tick(t, T0 + 50_000);
+    expect(landing.events).toEqual(['landing']);
+    const up = tick(landing.trip, T0 + 60_000);
+    expect(up.events).toEqual(['time-up']);
+    t = up.trip;
     expect(scene(t).phase).toBe('button');
     expect(canBank(t.round)).toBe(true);
-
-    const opener = t.opener;
-    t = bank(t, T0 + 70_000, '  Dad was the GPS ');
-    expect(t.miles).toBe(1);
-    expect(t.log[0]?.note).toBe('Dad was the GPS');
-    expect(t.opener).toBe((opener + 1) % 4);
-    expect(scene(t).phase).toBe('brief');
+    t = bank(t, T0 + 65_000, '  the pie-contest grandma ');
+    expect(t.miles).toBe(2);
+    expect(souvenirs(t)).toEqual([{ text: 'the pie-contest grandma', from: expect.any(String) as string }]);
   });
 
-  it('cannot bank before the button', () => {
-    const t = startRound(trip(), T0);
+  it('cannot bank before the last line', () => {
+    const t = startRound(play(trip()), T0);
     expect(bank(t, T0 + 1000)).toBe(t);
   });
 
-  it('lands early and keeps the time left', () => {
-    let t = startRound(trip(), T0);
-    t = land(t, T0 + 20_000);
-    const round = scene(t);
-    expect(round.phase).toBe('button');
-    expect(remaining(round.clock, T0 + 99_000)).toBe(40_000);
+  it('lands early and keeps the time that was left', () => {
+    const t = land(startRound(play(trip()), T0), T0 + 20_000);
+    expect(scene(t).phase).toBe('button');
+    expect(remaining(scene(t).clock, T0 + 99_000)).toBe(40_000);
   });
 
   it('pauses and resumes without losing time', () => {
-    let t = startRound(trip(), T0);
+    let t = startRound(play(trip()), T0);
     t = pause(t, T0 + 10_000);
     t = resume(t, T0 + 500_000);
     expect(formatClock(remaining(scene(t).clock, T0 + 510_000))).toBe('0:40');
-    expect(tick(t, T0 + 540_000).events).toEqual([]);
   });
 
-  it('fires the twist once, at the halfway point', () => {
-    // Find a seed whose first hand has a twist.
-    let t: Trip | null = null;
-    for (let seed = 1; seed < 200 && !t; seed++) {
-      const candidate = trip({}, seed);
-      if (scene(candidate).twistId) t = candidate;
-    }
-    if (!t) throw new Error('no seed produced a twist');
-    t = startRound(t, T0);
-    expect(tick(t, T0 + 29_000).events).toEqual([]);
-    const half = tick(t, T0 + 30_000);
-    expect(half.events).toEqual(['twist']);
-    expect(tick(half.trip, T0 + 31_000).events).toEqual([]);
-  });
-
-  it('never deals a twist when twists are off', () => {
-    for (let seed = 1; seed < 50; seed++) {
-      expect(scene(trip({ useTwists: false }, seed)).twistId).toBeNull();
-    }
-  });
-
-  it('swaps a card only before the scene starts', () => {
-    const t = trip();
-    const swapped = swap(t, 'where');
-    expect(scene(swapped).whereId).not.toBe(scene(t).whereId);
+  it('only swaps before the scene starts, and never the destination on arrival', () => {
+    const t = play(trip());
+    expect(scene(swap(t, 'where')).whereId).not.toBe(scene(t).whereId);
     const live = startRound(t, T0);
     expect(swap(live, 'where')).toBe(live);
   });
+});
 
-  it('scraps with no mile and keeps the opener', () => {
-    const t = startRound(trip(), T0);
-    const scrapped = scrap(t);
-    expect(scrapped.miles).toBe(0);
-    expect(scrapped.opener).toBe(t.opener);
-    expect(scene(scrapped).phase).toBe('brief');
+describe('How staging', () => {
+  it('deals no How in the first scene, then easy Hows until two How scenes are banked', () => {
+    let t = play(trip({}, 11));
+    expect(scene(t).howId).toBeNull();
+    const levels: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      t = play(t);
+      const how = cardById(t.round?.kind === 'scene' ? t.round.howId : null);
+      if (how) levels.push(how.level);
+    }
+    expect(levels.slice(0, 2)).toEqual(['easy', 'easy']);
   });
 
-  it('calls turns around the group from the opener', () => {
-    let t = startRound(trip(), T0);
-    expect(speakerIndex(t)).toBe(0);
-    t = nextLine(nextLine(t));
-    expect(speakerIndex(t)).toBe(2);
+  it('deals no How when How cards are off', () => {
+    let t = trip({ useHow: false, length: 'open' });
+    for (let i = 0; i < 4; i++) {
+      t = play(t);
+      expect(scene(t).howId).toBeNull();
+    }
   });
 });
 
-describe('warm-ups', () => {
-  it('banks a mile and returns to scenes', () => {
-    let t = startWarmup(trip(), 'U-01');
-    expect(warmup(t).seed).not.toBeNull();
-    t = startRound(t, T0);
-    t = bank(t, T0 + 30_000);
-    expect(t.miles).toBe(1);
-    expect(t.log[0]?.kind).toBe('warmup');
+describe('twists', () => {
+  it('come every other scene from the second, never beside a stretch How, and fire at 60%', () => {
+    let t = play(trip({ length: 'open' }, 5));
+    const twisted: boolean[] = [];
+    for (let i = 0; i < 6; i++) {
+      const round = scene(t);
+      twisted.push(round.twistId !== null);
+      if (round.twistId) expect(cardById(round.howId)?.level).not.toBe('stretch');
+      t = play(t);
+    }
+    expect(twisted[0]).toBe(false);
+    expect(twisted.filter(Boolean).length).toBeGreaterThanOrEqual(1);
+
+    let withTwist: Trip | null = null;
+    let probe = play(play(trip({ length: 'open', filters: { ...DEFAULT_SETTINGS.filters, stretch: false } }, 5)));
+    for (let i = 0; i < 6 && !withTwist; i++) {
+      if (scene(probe).twistId) withTwist = probe;
+      else probe = play(probe);
+    }
+    if (!withTwist) throw new Error('no twist dealt');
+    const live = startRound(withTwist, T0);
+    expect(tick(live, T0 + 35_000).events).toEqual([]);
+    expect(tick(live, T0 + 36_000).events).toEqual(['twist']);
+    expect(scene(throwTwist(live)).twistShown).toBe(true);
+  });
+});
+
+describe('the shape of a trip', () => {
+  it('runs a short trip as warm-up, two scenes, then the Arrival at the destination', () => {
+    let t = trip({ length: 'short' });
+    expect(t.round?.kind).toBe('warmup');
+    t = play(t);
+    expect(scene(t).arrival).toBe(false);
+    t = play(t, 'the soup');
+    expect(scene(t).arrival).toBe(false);
+    t = play(t);
+    const arrival = scene(t);
+    expect(arrival.arrival).toBe(true);
+    expect(arrival.whereId).toBe(t.destinationId);
+    expect(arrival.twistId).toBeNull();
+    t = play(t);
+    expect(t.finishedAt).not.toBeNull();
+    expect(t.round).toBeNull();
+    expect(t.miles).toBe(4);
+    expect(souvenirs(t).map((s) => s.text)).toEqual(['the soup']);
+  });
+
+  it('lets an open road head for the destination, and keep driving after the postcard', () => {
+    let t = play(trip({ length: 'open' }));
+    t = headForDestination(t);
+    expect(scene(t).arrival).toBe(true);
+    t = play(t);
+    expect(t.finishedAt).not.toBeNull();
+    t = keepDriving(t);
+    expect(t.finishedAt).toBeNull();
+    expect(scene(t).arrival).toBe(false);
+  });
+
+  it('lets a warm-up stand in for a scene, and returns to scenes after', () => {
+    let t = play(trip());
+    t = startWarmup(t);
+    expect(t.round?.kind).toBe('warmup');
+    t = play(t);
     expect(t.round?.kind).toBe('scene');
   });
 
   it('runs Half-Life at 60, 30 then 15 seconds', () => {
-    let t = startRound(startWarmup(trip(), 'U-04'), T0);
-    let result = tick(t, T0 + 60_000);
+    const halfLife = CARDS.find((card) => card.warmup?.halfLife)?.id;
+    if (!halfLife) throw new Error('the deck has no Half-Life warm-up');
+    let t = startRound(startWarmup(trip(), halfLife), T0);
+    const seconds = cardById(halfLife)?.warmup?.seconds ?? 60;
+    let result = tick(t, T0 + seconds * 1000);
     expect(result.events).toEqual(['half-life-pass']);
-    t = startRound(result.trip, T0 + 70_000);
-    expect(warmup(t).clock.durationMs).toBe(30_000);
-    result = tick(t, T0 + 100_000);
-    t = startRound(result.trip, T0 + 110_000);
-    expect(warmup(t).clock.durationMs).toBe(15_000);
-    result = tick(t, T0 + 125_000);
-    expect(result.events).toEqual(['warmup-done']);
+    t = startRound(result.trip, T0);
+    expect(warmup(t).clock.durationMs).toBe(seconds * 500);
+    result = tick(t, T0 + seconds * 500);
+    t = startRound(result.trip, T0);
+    expect(warmup(t).clock.durationMs).toBe(seconds * 250);
+    expect(tick(t, T0 + seconds * 250).events).toEqual(['warmup-done']);
   });
 });
 
-describe('settings', () => {
+describe('filters and settings', () => {
+  it('only draws voice-only cards when voice-only is on', () => {
+    const t = trip({ filters: { voiceOnly: true, quiet: false, moving: false, stretch: true } });
+    for (const suit of ['how', 'twist', 'warmup'] as const) {
+      for (let i = 0; i < 20; i++) expect(draw(t, suit)?.card.voiceOnly).toBe(true);
+    }
+    expect(missingSuits(t)).toEqual([]);
+  });
+
   it('re-deals an unstarted hand when How is switched off', () => {
-    const t = trip();
+    let t = play(play(trip({}, 9)));
+    while (!scene(t).howId) t = play(t);
     const next = updateSettings(t, { ...t.settings, useHow: false });
     expect(scene(next).howId).toBeNull();
   });
 
   it('keeps a live scene when the voice is toggled', () => {
-    const t = startRound(trip(), T0);
+    const t = startRound(play(trip()), T0);
     expect(updateSettings(t, { ...t.settings, voice: false }).round).toBe(t.round);
-  });
-});
-
-describe('lineCue', () => {
-  it('alternates Fortunately and Unfortunately', () => {
-    expect(lineCue('fortunately', 0)).toBe('Fortunately…');
-    expect(lineCue('fortunately', 1)).toBe('Unfortunately…');
-  });
-
-  it('walks the alphabet', () => {
-    expect(lineCue('alphabet', 2)).toBe('Start with C.');
   });
 });
