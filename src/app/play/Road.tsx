@@ -29,20 +29,7 @@ import { TripSettingsSheet } from './TripSettingsSheet';
 import { WarmupView } from './WarmupView';
 import { destinationScript, sceneScript, warmupScript } from './script';
 import { useAnnouncer } from './useAnnouncer';
-
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    const id = window.setInterval(() => {
-      setNow(Date.now());
-    }, 200);
-    return () => {
-      window.clearInterval(id);
-    };
-  }, [active]);
-  return now;
-}
+import { useNow } from './useNow';
 
 function progress(trip: Trip): string {
   const total = totalStops(trip);
@@ -190,7 +177,7 @@ export function Road({ trip }: { readonly trip: Trip }) {
           {round?.kind === 'scene' && (
             <SceneView trip={trip} round={round} now={now} act={act} souvenir={souvenir} onSouvenir={setSouvenir} />
           )}
-          {round?.kind === 'warmup' && <WarmupView trip={trip} round={round} now={now} />}
+          {round?.kind === 'warmup' && <WarmupView trip={trip} round={round} now={now} firstStop={trip.log.length === 0} />}
         </div>
       </IonContent>
 

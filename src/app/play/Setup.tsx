@@ -3,7 +3,6 @@ import {
   IonContent,
   IonFooter,
   IonHeader,
-  IonIcon,
   IonInput,
   IonItem,
   IonLabel,
@@ -13,10 +12,10 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/react';
-import { addCircle, removeCircle } from 'ionicons/icons';
 import { useState } from 'react';
-import { DEFAULT_SETTINGS, MAX_PLAYERS, MIN_PLAYERS } from '@game/trip';
+import { DEFAULT_SETTINGS, MIN_PLAYERS } from '@game/trip';
 import type { Settings } from '@game/types';
+import { PlayerFields } from '@app/components/PlayerFields';
 import { SettingsFields } from '@app/components/SettingsFields';
 import { useTrips } from '@app/state/TripStore';
 
@@ -25,7 +24,8 @@ export function Setup() {
   const last = trips[0];
   const [name, setName] = useState('Sunday drive');
   const [players, setPlayers] = useState<string[]>(last ? last.players.map((player) => player.name) : ['', '', '', '']);
-  const [settings, setSettings] = useState<Settings>(last?.settings ?? DEFAULT_SETTINGS);
+  // Read-aloud starts off for every new trip, even if the last one used it; it's one toggle away.
+  const [settings, setSettings] = useState<Settings>(() => (last ? { ...last.settings, voice: DEFAULT_SETTINGS.voice } : DEFAULT_SETTINGS));
   const [driverIndex, setDriverIndex] = useState<number | null>(null);
 
   const named = players.map((player, index) => ({ name: player.trim(), index })).filter((player) => player.name);
@@ -72,50 +72,13 @@ export function Setup() {
           <IonListHeader>
             <IonLabel>Players</IonLabel>
           </IonListHeader>
-          <IonList inset>
-            {players.map((player, index) => (
-              <IonItem key={index}>
-                {players.length > MIN_PLAYERS && (
-                  <IonButton
-                    slot="start"
-                    fill="clear"
-                    color="danger"
-                    aria-label={`Remove player ${index + 1}`}
-                    onClick={() => {
-                      setPlayers(players.filter((_, i) => i !== index));
-                      if (driverIndex === index) setDriverIndex(null);
-                    }}
-                  >
-                    <IonIcon slot="icon-only" icon={removeCircle} />
-                  </IonButton>
-                )}
-                <IonInput
-                  aria-label={`Player ${index + 1}`}
-                  placeholder={index === 0 ? 'Name' : 'Next seat'}
-                  value={player}
-                  maxlength={24}
-                  autocapitalize="words"
-                  onIonInput={(event) => {
-                    const next = [...players];
-                    next[index] = event.detail.value ?? '';
-                    setPlayers(next);
-                  }}
-                />
-              </IonItem>
-            ))}
-            {players.length < MAX_PLAYERS && (
-              <IonItem
-                button
-                detail={false}
-                onClick={() => {
-                  setPlayers([...players, '']);
-                }}
-              >
-                <IonIcon slot="start" icon={addCircle} color="success" />
-                <IonLabel color="primary">Add a player</IonLabel>
-              </IonItem>
-            )}
-          </IonList>
+          <PlayerFields
+            players={players}
+            onChange={setPlayers}
+            onRemove={(index) => {
+              if (driverIndex === index) setDriverIndex(null);
+            }}
+          />
           <p className="section-note">In seating order. Everyone gets cast; roles rotate every scene.</p>
 
           <SettingsFields

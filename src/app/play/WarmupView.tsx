@@ -6,7 +6,15 @@ import { SignCard } from '@app/components/SignCard';
 
 const PASS_LABEL = ['', 'Same story, half the time', 'Half again'];
 
-export function WarmupView({ trip, round, now }: { readonly trip: Trip; readonly round: WarmupRound; readonly now: number }) {
+interface WarmupViewProps {
+  readonly trip: Trip;
+  readonly round: WarmupRound;
+  readonly now: number;
+  /** The trip's opening stop, which gets a line of introduction. */
+  readonly firstStop?: boolean;
+}
+
+export function WarmupView({ trip, round, now, firstStop = false }: WarmupViewProps) {
   const card = cardById(round.cardId);
   if (!card?.warmup) return null;
   const cues = card.warmup.turnCues;
@@ -15,7 +23,7 @@ export function WarmupView({ trip, round, now }: { readonly trip: Trip; readonly
 
   return (
     <>
-      {trip.log.length === 0 && <p className="lede">First stop: a warm-up to get everyone talking.</p>}
+      {firstStop && <p className="lede">First stop: a warm-up to get everyone talking.</p>}
       <div className="hand">
         <SignCard card={card} className="deal-in" />
       </div>

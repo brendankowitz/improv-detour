@@ -21,10 +21,13 @@ interface SettingsFieldsProps {
   /** The driver's player id, or null. */
   readonly driverId: string | null;
   readonly onDriverChange: (driverId: string | null) => void;
+  /** Quick play has no trip to shape, no driver seat and no Director. */
+  readonly variant?: 'trip' | 'quick';
 }
 
 /** Where you are and how you want to play: grouped iOS settings lists. */
-export function SettingsFields({ settings, onChange, players, driverId, onDriverChange }: SettingsFieldsProps) {
+export function SettingsFields({ settings, onChange, players, driverId, onDriverChange, variant = 'trip' }: SettingsFieldsProps) {
+  const isTrip = variant === 'trip';
   const { filters } = settings;
   const preset = matchingPreset(filters);
   const setFilters = (patch: Partial<Settings['filters']>) => {
@@ -68,7 +71,7 @@ export function SettingsFields({ settings, onChange, players, driverId, onDriver
       </div>
       <IonList inset>
         {toggle('Voice only', filters.voiceOnly, (voiceOnly) => { setFilters({ voiceOnly }); }, 'Every card works by ear, so a driver can play.')}
-        {filters.voiceOnly && players.length > 0 && (
+        {isTrip && filters.voiceOnly && players.length > 0 && (
           <IonItem>
             <IonSelect
               label="Who’s driving?"
@@ -91,29 +94,33 @@ export function SettingsFields({ settings, onChange, players, driverId, onDriver
         {toggle('Quiet', filters.quiet, (quiet) => { setFilters({ quiet }); }, 'Nothing louder than a table voice.')}
         {toggle('Moving allowed', filters.moving, (moving) => { setFilters({ moving }); }, 'Adds cards where someone stands up.')}
       </IonList>
-      {filters.voiceOnly && (
+      {isTrip && filters.voiceOnly && (
         <p className="section-note">The driver never opens a scene and never lands one. They can say “driving” to drop out.</p>
       )}
 
-      <IonListHeader>
-        <IonLabel>Trip</IonLabel>
-      </IonListHeader>
-      <div style={{ padding: '4px 16px 6px' }}>
-        <IonSegment
-          value={settings.length}
-          onIonChange={(event) => {
-            const length = event.detail.value as TripLength | undefined;
-            if (length) onChange({ ...settings, length });
-          }}
-        >
-          {TRIP_LENGTHS.map(({ id, label }) => (
-            <IonSegmentButton key={id} value={id}>
-              <IonLabel>{label}</IonLabel>
-            </IonSegmentButton>
-          ))}
-        </IonSegment>
-      </div>
-      <p className="section-note">{TRIP_NOTE[settings.length]}</p>
+      {isTrip && (
+        <>
+          <IonListHeader>
+            <IonLabel>Trip</IonLabel>
+          </IonListHeader>
+          <div style={{ padding: '4px 16px 6px' }}>
+            <IonSegment
+              value={settings.length}
+              onIonChange={(event) => {
+                const length = event.detail.value as TripLength | undefined;
+                if (length) onChange({ ...settings, length });
+              }}
+            >
+              {TRIP_LENGTHS.map(({ id, label }) => (
+                <IonSegmentButton key={id} value={id}>
+                  <IonLabel>{label}</IonLabel>
+                </IonSegmentButton>
+              ))}
+            </IonSegment>
+          </div>
+          <p className="section-note">{TRIP_NOTE[settings.length]}</p>
+        </>
+      )}
 
       <IonListHeader>
         <IonLabel>Scene length</IonLabel>
@@ -138,10 +145,10 @@ export function SettingsFields({ settings, onChange, players, driverId, onDriver
         <IonLabel>Play</IonLabel>
       </IonListHeader>
       <IonList inset>
-        {toggle('How cards', settings.useHow, (useHow) => { onChange({ ...settings, useHow }); }, 'A rule for the scene, from the second scene on.')}
-        {toggle('Twists', settings.useTwists, (useTwists) => { onChange({ ...settings, useTwists }); }, 'Every other scene, something changes at the 60% mark.')}
+        {toggle('How cards', settings.useHow, (useHow) => { onChange({ ...settings, useHow }); }, isTrip ? 'A rule for the scene, from the second scene on.' : 'A rule for the whole scene.')}
+        {toggle('Twists', settings.useTwists, (useTwists) => { onChange({ ...settings, useTwists }); }, isTrip ? 'Every other scene, something changes at the 60% mark.' : 'Something changes at the 60% mark.')}
         {toggle('Stretch cards', filters.stretch, (stretch) => { setFilters({ stretch }); }, 'Harder, drier rules once you’ve warmed up.')}
-        {toggle('Director', settings.director, (director) => { onChange({ ...settings, director }); }, 'Someone off-scene can swap a card, throw the twist and call “Scene!”')}
+        {isTrip && toggle('Director', settings.director, (director) => { onChange({ ...settings, director }); }, 'Someone off-scene can swap a card, throw the twist and call “Scene!”')}
         {toggle('Read cards aloud', settings.voice, (voice) => { onChange({ ...settings, voice }); })}
       </IonList>
     </>
