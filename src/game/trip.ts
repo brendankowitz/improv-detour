@@ -35,7 +35,8 @@ export const DEFAULT_SETTINGS: Settings = {
   useHow: true,
   useTwists: true,
   director: false,
-  voice: true,
+  // Off unless a family opts in: a synthetic voice reading every hand is a lot.
+  voice: false,
 };
 
 /** Something the UI should announce: a chime, a spoken line, a vibration. */

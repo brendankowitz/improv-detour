@@ -24,7 +24,8 @@ export function Setup() {
   const last = trips[0];
   const [name, setName] = useState('Sunday drive');
   const [players, setPlayers] = useState<string[]>(last ? last.players.map((player) => player.name) : ['', '', '', '']);
-  const [settings, setSettings] = useState<Settings>(last?.settings ?? DEFAULT_SETTINGS);
+  // Read-aloud starts off for every new trip, even if the last one used it; it's one toggle away.
+  const [settings, setSettings] = useState<Settings>(() => (last ? { ...last.settings, voice: DEFAULT_SETTINGS.voice } : DEFAULT_SETTINGS));
   const [driverIndex, setDriverIndex] = useState<number | null>(null);
 
   const named = players.map((player, index) => ({ name: player.trim(), index })).filter((player) => player.name);

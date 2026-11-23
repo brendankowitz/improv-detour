@@ -54,7 +54,7 @@ export function QuickPage() {
   const { trips } = useTrips();
   const last = trips[0];
   const [players, setPlayers] = useState<string[]>(() => (last ? last.players.map((p) => p.name) : ['', '']));
-  const [settings, setSettings] = useState<Settings>(() => (last ? { ...last.settings, length: 'open', director: false } : QUICK_DEFAULTS));
+  const [settings, setSettings] = useState<Settings>(() => (last ? { ...last.settings, length: 'open', director: false, voice: DEFAULT_SETTINGS.voice } : QUICK_DEFAULTS));
   const [play, setPlay] = useState<QuickPlay | null>(null);
 
   if (play) {

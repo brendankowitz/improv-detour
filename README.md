@@ -43,7 +43,7 @@ from one scene to the next.
 **204 cards** across funny, sporty, nerdy, kid-life, beauty and style, classic and retro, and dad-joke themes, all
 written and cross-reviewed by Fable and Opus.
 
-**Phone-down play.** The phone reads each hand aloud, keeps the screen awake, chimes ten seconds before the end and
+**Phone-down play.** The phone can read each hand aloud (off by default; turn on **Read cards aloud**), keeps the screen awake, chimes ten seconds before the end and
 for twists, never talks over a player, and works offline once it has loaded.
 
 ## Running it
